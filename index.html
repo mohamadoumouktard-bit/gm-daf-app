@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>GM DAF — GUEST MARKETS</title>
+<title>Guest Markets Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -44,6 +44,7 @@ td.montant,th.montant{text-align:right;font-variant-numeric:tabular-nums;white-s
 .acces-marque{background:var(--barre);color:#fff;padding:3rem;display:flex;flex-direction:column;justify-content:space-between;gap:2rem}
 .acces-marque blockquote{margin:0;font-size:1.9rem;line-height:1.25;font-weight:600;max-width:22ch}
 .acces-marque small{color:var(--barre-texte)}
+.acces-sous{margin:.75rem 0 0;color:var(--barre-texte);font-size:1rem}
 .acces-form{background:var(--surface);padding:3rem 2.5rem;display:flex;flex-direction:column;justify-content:center}
 @media (max-width:760px){.acces{grid-template-columns:1fr}.acces-marque{padding:2rem}.acces-marque blockquote{font-size:1.4rem}}
 
@@ -823,7 +824,8 @@ async function entrer(session) {
 function cadreAcces(contenu) {
   $("#app").innerHTML = `<div class="acces">
     <div class="acces-marque"><span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span>
-      <blockquote>Gestion administrative et financière</blockquote>
+      <div><blockquote>Guest Markets Management</blockquote>
+      <p class="acces-sous">Gestion administrative, financière et des ressources humaines</p></div>
       <small>Accès réservé aux utilisateurs invités</small></div>
     <div class="acces-form">${contenu}</div></div>`;
 }
@@ -976,7 +978,7 @@ function rendreCoque() {
   $("#app").innerHTML = `<div class="coque">
     <aside class="barre" id="barre">
       <div class="barre-tete"><button class="b-fermer-menu" id="b-fermer-menu" aria-label="Fermer le menu">✕</button>
-        <span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span><span class="sous-logo">Administration et finances</span></div>
+        <span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span><span class="sous-logo">Guest Markets Management</span></div>
       <nav aria-label="Navigation principale">${liens}</nav>
       <div class="barre-pied"><span class="avatar" aria-hidden="true">${esc(initiales(p).toUpperCase())}</span>
         <div class="qui"><b>${esc(nomComplet(p))}</b><span>${esc(libelleRoles(p))}</span></div>
