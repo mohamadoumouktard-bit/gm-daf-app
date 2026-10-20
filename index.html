@@ -271,6 +271,9 @@ table.pivot td.clic{cursor:pointer}
 table.pivot td.clic:hover{background:var(--registre-clair)}
 table.pivot td,table.pivot th{padding:.5rem .6rem}
 .chiffres b.negatif{color:var(--rouge)}
+tr.clic{cursor:pointer} tr.clic:hover td{background:var(--registre-clair)}
+svg.courbe{display:block} svg.courbe polyline{stroke-width:1.6} svg.courbe .pos{stroke:var(--registre)} svg.courbe .neg{stroke:var(--rouge)}
+svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
 @media print{
   .barre,.barre-haut,.actions-ligne,#toast,.outils{display:none!important}
   .coque,.principal{display:block}.contenu{overflow:visible;padding:0}.panneau,.carte-form{border:none}
@@ -628,6 +631,7 @@ const NAV = [
   { groupe: "Finances", roles: LECTEURS_ACHATS },
   { id: "achats", l: "Achats", roles: LECTEURS_ACHATS },
   { id: "tresorerie", l: "Trésorerie", roles: FINANCE },
+  { id: "situation_tresorerie", l: "Situation de trésorerie", roles: FINANCE },
   { id: "dettes", l: "Dettes fournisseurs", roles: FINANCE },
   { id: "consultation", l: "Consultation par période", roles: FINANCE },
   { id: "rapprochements", l: "Rapprochements bancaires", roles: FINANCE },
@@ -933,12 +937,14 @@ const ICONES = {
   chevron: "M9 6l6 6-6 6",
   menu: "M3 6h18M3 12h18M3 18h18",
   pieces: "M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM17.5 9.5a6 6 0 1 1-8 8",
-  telephone: "M7 2h10v20H7zM11 18h2"
+  telephone: "M7 2h10v20H7zM11 18h2",
+  courbe: "M3 17l6-6 4 4 8-8M15 7h6v6"
 };
 const ic = (nom, taille = 18) => `<svg class="ic" width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONES[nom] || ICONES.document}"/></svg>`;
 const ICONE_PAGE = {
   accueil: "accueil", tableau_de_bord: "grille", etats: "document", analytique: "camembert", budget: "cible", achats: "panier", tresorerie: "portefeuille",
+  situation_tresorerie: "courbe",
   dettes: "facture", consultation: "loupe", rapprochements: "banque", exploitant: "personne", immobilisations: "immeuble", ventes: "facture", creances: "alerte",
   clients: "groupe", stock: "carton", personnel: "groupe", paie: "billet", conges: "calendrier", journaux: "livre", grand_livre: "livre", balance: "balance",
   periodes: "calendrier", etalements: "couches", reprise: "import", fournisseurs: "camion", produits: "carton", categories_produit: "etiquette",
@@ -1086,7 +1092,7 @@ async function pageAccueil() {
   if (peut(GESTION)) ({ count: enAttente } = await sb.from("profils").select("id", { count: "exact", head: true }).eq("actif", false));
 
   const ICONE_TRAITER = { achats: "panier", paie: "billet", personnel: "groupe", conges: "calendrier", ventes: "facture", creances: "alerte", stock: "carton",
-    immobilisations: "immeuble", etalements: "couches", rapprochements: "banque", utilisateurs: "bouclier", tresorerie: "portefeuille" };
+    immobilisations: "immeuble", etalements: "couches", rapprochements: "banque", utilisateurs: "bouclier", tresorerie: "portefeuille", situation_tresorerie: "courbe" };
   // Un point = un titre (la partie en gras) et une précision.
   const items = [...faire, ...points, ...(enAttente ? [{ texte: `<b>${enAttente} compte(s) en attente</b> d'activation.`, page: "utilisateurs", bouton: "Activer" }] : [])].map(pt => {
     const m = /^<b>([\s\S]*?)<\/b>\s*:?\s*([\s\S]*)$/.exec(pt.texte || "");
@@ -1884,6 +1890,15 @@ async function aFaireFinances() {
       } catch (e) { /* sans accès */ }
     }
   }
+  if (peut(FINANCE)) {
+    // Un compte de trésorerie ne peut pas être à découvert ; un transfert doit arriver quelque part.
+    try {
+      const neg = (await appeler("situation_tresorerie", { p_date: aujourdhui() })).filter(s => Number(s.solde) < 0);
+      if (neg.length) pts.push({ texte: `<b>${neg.length} compte(s) de trésorerie en solde négatif</b> (${esc(neg.map(s => s.code).join(", "))}) : une entrée manque ou a été portée sur un autre compte.`, page: "situation_tresorerie", bouton: "Examiner" });
+      const tr = (await appeler("transferts_tresorerie")).filter(t => t.statut !== "Arrivé" && ecartJours(t.date_sortie || t.date_entree, aujourdhui()) > 7);
+      if (tr.length) pts.push({ texte: `<b>${tr.length} transfert(s) entre comptes</b> sans contrepartie depuis plus de 7 jours : arrivée ou départ à saisir.`, page: "situation_tresorerie", bouton: "Voir" });
+    } catch (e) { /* sans accès */ }
+  }
   if (peut(CORRECTION)) {
     const n = await compter(sb.from("releves_bancaires").select("id", { count: "exact", head: true }).eq("statut", "En cours"));
     if (n) pts.push({ texte: `<b>${n} rapprochement(s) bancaire(s)</b> en cours, à terminer et valider.`, page: "rapprochements", bouton: "Rapprocher" });
@@ -1939,8 +1954,9 @@ async function pageTresorerie() {
       <div class="actions-ligne">${boutons}</div></div>
     <div class="chiffres">${etat.soldes.map(s => `<a href="#/tresorerie" data-compte="${s.id}"><b class="${Number(s.solde) < 0 ? "negatif" : ""}">${fcfa(s.solde)}</b>
       <span>${esc(s.libelle)}</span></a>`).join("")}</div>
-    ${etat.soldes.some(s => Number(s.solde) < 0) ? `<p class="info">Un solde négatif signifie qu'il manque des entrées : les encaissements des ventes du classeur
-      seront repris avec le module des ventes (lot 3).</p>` : ""}
+    ${etat.soldes.some(s => Number(s.solde) < 0) ? `<p class="info">Un compte ne peut pas être à découvert : un solde négatif signifie qu'une entrée manque
+      ou a été portée sur un autre compte (encaissement arrivé sur le sous-compte, transfert dont l'arrivée n'est pas saisie…).
+      <button class="btn-lien" data-aller="situation_tresorerie">Voir la situation de trésorerie</button></p>` : ""}
     <div class="panneau">
       <div class="outils">${champsPeriode()}
         <select id="f-compte" aria-label="Compte"><option value="">Tous les comptes</option>${etat.soldes.map(s =>
@@ -1956,6 +1972,9 @@ async function pageTresorerie() {
         <th>Site · véhicule</th><th class="montant">Entrée</th><th class="montant">Sortie</th><th></th></tr></thead>
       <tbody id="corps"></tbody><tfoot id="pied"></tfoot></table></div></div>`;
   if (param.compte) $("#f-compte").value = param.compte;
+  if (param.type) $("#f-type").value = param.type;
+  if (param.annee) { etat.filtres.annee = param.annee; etat.filtres.mois = param.mois || ""; $("#p-annee").value = param.annee; $("#p-mois").value = param.mois || ""; }
+  $$("#contenu [data-aller]").forEach(b => b.onclick = () => aller(b.dataset.aller));
   if (param.aAffecter) { $("#f-type").value = "Règlement fournisseur"; $("#f-revoir").checked = true; }
 
   let ops = [];
@@ -2034,7 +2053,7 @@ function formulaireOperation(genre, retour) {
       ${exploitant ? `<div><label for="op-payeur">Payée par *</label><select id="op-payeur"><option>CEO</option><option>Guest Cameroun</option></select></div>`
         : `<div><label for="op-compte">${type === "Virement" ? "Compte débité" : type === "Recette" ? "Compte qui encaisse" : "Compte qui paie"} *</label>
           <select id="op-compte">${optComptes}</select><p class="aide-champ" id="op-solde"></p></div>`}
-      ${type === "Virement" ? `<div><label for="op-dest">Compte crédité *</label><select id="op-dest">${optComptes}</select></div>`
+      ${type === "Virement" ? `<div><label for="op-dest">Compte crédité *</label><select id="op-dest">${optComptes}</select><p class="aide-champ" id="op-solde-dest"></p></div>`
         : `<div><label for="op-cat">Catégorie *</label><select id="op-cat">${optionsCategories(filtreCat)}</select></div>`}
       <div><label for="op-montant">Montant (FCFA) *</label><input type="number" id="op-montant" min="1" step="1"></div>
       <div><label for="op-libelle">Libellé *</label><input type="text" id="op-libelle"></div>
@@ -2083,12 +2102,187 @@ function formulaireOperation(genre, retour) {
     const aide = [c.aide, c.compte ? `Compte ${c.compte}.` : ""].filter(Boolean).join(" ");
     $("#op-aide").hidden = !aide; $("#op-aide").textContent = aide;
   };
+  // Solde du compte, et solde après l'opération : un compte de trésorerie ne doit pas passer à découvert.
   const majSolde = () => {
+    const m = Number(($("#op-montant") || {}).value || 0), sortie = type !== "Recette";
     const s = (etat.soldes || []).find(x => x.id === ($("#op-compte") || {}).value);
-    if ($("#op-solde")) $("#op-solde").textContent = s ? `Solde : ${fcfa(s.solde)} FCFA${s.plafond_operation ? ` · plafond par sortie : ${fcfa(s.plafond_operation)} FCFA` : ""}` : "";
+    if ($("#op-solde")) {
+      const apres = s ? Number(s.solde) + (sortie ? -m : m) : 0;
+      $("#op-solde").innerHTML = s ? `Solde : ${fcfa(s.solde)} FCFA${m ? ` · après : <b class="${apres < 0 ? "negatif" : ""}">${fcfa(apres)} FCFA</b>` : ""}`
+        + `${s.plafond_operation ? ` · plafond par sortie : ${fcfa(s.plafond_operation)} FCFA` : ""}${m && apres < 0 ? "<br>Le compte passerait à découvert : vérifiez le compte choisi." : ""}` : "";
+    }
+    const dd = (etat.soldes || []).find(x => x.id === ($("#op-dest") || {}).value);
+    if ($("#op-solde-dest")) $("#op-solde-dest").textContent = dd ? `Solde : ${fcfa(dd.solde)} FCFA${m ? ` · après : ${fcfa(Number(dd.solde) + m)} FCFA` : ""}` : "";
   };
   if ($("#op-cat")) $("#op-cat").onchange = majCat;
-  if ($("#op-compte")) $("#op-compte").onchange = majSolde;
+  ["op-compte", "op-dest"].forEach(id => { if ($("#" + id)) $("#" + id).onchange = majSolde; });
+  if ($("#op-montant")) $("#op-montant").oninput = majSolde;
+}
+
+/* =====================================================================
+   Situation de trésorerie (lot 9) : un tableau par compte, à une date,
+   avec les fonds en transit entre deux comptes.
+   ===================================================================== */
+const plusJoursIso = (d, n) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const ecartJours = (a, b) => Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 86400000);
+
+/* Petite courbe du solde : la ligne pointillée est le zéro, rouge si le compte finit à découvert. */
+function courbeSolde(points) {
+  if (!points.length) return "";
+  const v = points.map(p => Number(p.solde)), min = Math.min(0, ...v), max = Math.max(0, ...v), L = 120, H = 30;
+  const x = i => (i * L / Math.max(1, v.length - 1)).toFixed(1), y = s => (H - 2 - (s - min) * (H - 4) / (max - min || 1)).toFixed(1);
+  return `<svg class="courbe" width="${L}" height="${H}" viewBox="0 0 ${L} ${H}" role="img" aria-label="Évolution du solde sur ${v.length} jours">
+    ${min < 0 ? `<line x1="0" x2="${L}" y1="${y(0)}" y2="${y(0)}" class="zero"/>` : ""}
+    <polyline fill="none" class="${v[v.length - 1] < 0 ? "neg" : "pos"}" points="${v.map((s, i) => `${x(i)},${y(s)}`).join(" ")}"/></svg>`;
+}
+
+async function pageSituationTresorerie() {
+  await chargerRefsFinance();
+  const p = etat.param || {}, date = p.date || aujourdhui(), debut = plusJoursIso(date, -89);
+  const [sit, evo, tr, manuels, parents] = await Promise.all([
+    appeler("situation_tresorerie", { p_date: date }), appeler("evolution_tresorerie", { p_debut: debut, p_fin: date }),
+    appeler("transferts_tresorerie"), sb.from("transferts_apparies").select("sortie_id, motif").then(r => r.data || []),
+    sb.from("comptes_tresorerie").select("id, parent_id").then(r => r.data || [])]);
+  const total = sit.reduce((t, s) => t + Number(s.solde), 0);
+  const parType = {};
+  sit.forEach(s => { const k = s.type === "Caisse" ? "Caisses" : s.type === "Banque" ? "Banques" : "Mobile money"; parType[k] = (parType[k] || 0) + Number(s.solde); });
+  const attente = tr.filter(t => t.statut !== "Arrivé"), apparies = tr.filter(t => t.statut === "Arrivé");
+  const transit = attente.reduce((t, x) => t + (x.statut === "En transit" ? 1 : -1) * Number(x.montant), 0);
+  const negatifs = sit.filter(s => Number(s.solde) < 0);
+  const ecartRel = s => s.releve_fin ? Number(s.releve_solde) - Number(s.solde_au_releve) : null;
+  const etatCompte = s => {
+    if (Number(s.solde) < 0) return `<span class="pastille alerte">À découvert depuis le ${esc(dateCourte(s.negatif_depuis))}</span>`;
+    const e = ecartRel(s);
+    if (e) return `<span class="pastille attente" title="Relevé au ${esc(dateCourte(s.releve_fin))} : ${fcfa(s.releve_solde)} ; comptabilité : ${fcfa(s.solde_au_releve)}">Écart relevé ${fcfa(e)}</span>`;
+    if (s.type === "Banque" && !s.releve_fin) return `<span class="pastille inactif">Aucun relevé</span>`;
+    return `<span class="pastille ok">À jour</span>`;
+  };
+  const droitsCompleter = peut(["tresorier", "comptable", "daf", "admin"]);
+  const peutApparier = t => peut(CORRECTION) && t.statut === "En transit"
+    && attente.some(a => a.statut === "Arrivée sans départ" && Number(a.montant) === Number(t.montant) && a.compte_entree !== t.compte_sortie && a.date_entree >= t.date_sortie);
+
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Situation de trésorerie</h1>
+      <p class="discret">Le solde de chaque compte, son mouvement du mois et ses 90 derniers jours, comparés au dernier relevé. Un compte de trésorerie ne peut pas être
+      à découvert : un solde négatif signale une entrée manquante ou portée sur un autre compte.</p></div>
+      <div class="actions-ligne"><label class="discret" for="st-date" style="margin:0">Au</label><input type="date" id="st-date" value="${esc(date)}" style="width:auto">
+        <button class="btn" id="st-imprimer">Imprimer</button><button class="btn" id="st-export">Exporter</button></div></div>
+    <div class="chiffres"><a><b class="${total < 0 ? "negatif" : ""}">${fcfa(total)}</b><span>Trésorerie totale</span></a>
+      ${Object.entries(parType).map(([k, v]) => `<a><b class="${v < 0 ? "negatif" : ""}">${fcfa(v)}</b><span>${esc(k)}</span></a>`).join("")}
+      <a href="#transit" id="st-lien-transit"><b>${fcfa(transit)}</b><span>Fonds en transit (585)</span></a></div>
+    ${negatifs.map(s => {
+      const parent = (parents.find(x => x.id === s.id) || {}).parent_id, nomParent = parent ? (sit.find(x => x.id === parent) || {}).code : null;
+      const lies = attente.filter(t => t.compte_sortie === s.code || t.compte_entree === s.code);
+      const d0 = s.negatif_depuis || date;
+      return `<div class="info"><b>${esc(s.code)} est à ${fcfa(s.solde)} FCFA depuis le ${esc(dateCourte(d0))}.</b>
+        Il manque ${fcfa(-s.solde)} FCFA d'entrées sur ce compte. Pistes, dans l'ordre :
+        <ol style="margin:.4rem 0 .4rem 1.2rem">
+          ${nomParent ? `<li>des encaissements clients arrivés sur ${esc(s.code)} mais saisis sur ${esc(nomParent)} : comparez avec le relevé de ${esc(s.code)},
+            ouvrez chaque encaissement concerné et utilisez <b>Changer de compte</b>.
+            <button class="btn-lien" data-voir='${esc(JSON.stringify({ compte: parent, type: "Encaissement client", annee: Number(d0.slice(0, 4)), mois: Number(d0.slice(5, 7)) }))}'>Encaissements de ${esc(nomParent)} en ${esc(MOIS[Number(d0.slice(5, 7)) - 1].toLowerCase())}</button></li>` : ""}
+          <li>un virement reçu (du compte principal, de l'exploitant…) non saisi${lies.length ? ` ; ${lies.length} transfert(s) de ce compte restent sans contrepartie (ci-dessous)` : ""} ;</li>
+          <li>une sortie portée sur ce compte alors qu'elle est partie d'un autre.</li></ol>
+        <button class="btn-lien" data-voir='${esc(JSON.stringify({ compte: s.id }))}'>Voir les opérations de ${esc(s.code)}</button>
+        ${peut(FINANCE) ? ` · <button class="btn-lien" data-aller="rapprochements">Saisir ou importer son relevé</button>` : ""}</div>`;
+    }).join("")}
+    <div class="panneau"><div class="defil"><table><thead><tr><th style="min-width:14rem">Compte</th><th class="montant">Début du mois</th><th class="montant">Entrées du mois</th>
+      <th class="montant">Sorties du mois</th><th class="montant">Solde au ${esc(dateCourte(date))}</th><th>90 jours</th><th>Dernier relevé</th><th>État</th></tr></thead>
+      <tbody>${sit.map(s => `<tr class="clic" data-compte="${s.id}"><td><b>${esc(s.code)}</b><div class="discret petit">${esc(s.libelle)}</div></td>
+        <td class="montant">${fcfa(s.solde_debut_mois)}</td><td class="montant">${fcfa(s.entrees_mois)}</td><td class="montant">${fcfa(s.sorties_mois)}</td>
+        <td class="montant"><b class="${Number(s.solde) < 0 ? "negatif" : ""}">${fcfa(s.solde)}</b></td>
+        <td>${courbeSolde(evo.filter(e => e.compte_id === s.id))}</td>
+        <td class="petit">${s.releve_fin ? `${esc(dateCourte(s.releve_fin))} · ${fcfa(s.releve_solde)}<div class="discret">${esc(s.releve_statut || "")}</div>` : `<span class="discret">—</span>`}</td>
+        <td>${etatCompte(s)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td>Total</td><td class="montant">${fcfa(sit.reduce((t, s) => t + Number(s.solde_debut_mois), 0))}</td>
+        <td class="montant">${fcfa(sit.reduce((t, s) => t + Number(s.entrees_mois), 0))}</td><td class="montant">${fcfa(sit.reduce((t, s) => t + Number(s.sorties_mois), 0))}</td>
+        <td class="montant"><b>${fcfa(total)}</b></td><td colspan="3"></td></tr></tfoot></table></div></div>
+
+    <h2 id="transit">Fonds en transit entre deux comptes</h2>
+    <p class="discret">Le classeur saisit chaque transfert en deux lignes : la sortie d'un compte et l'arrivée sur l'autre, par le compte 585. L'application rapproche
+      les deux moitiés de même montant, à quelques jours d'écart. Ce qui reste ici est parti sans être arrivé, ou arrivé sans départ.
+      Les nouveaux transferts se saisissent en une fois avec le bouton <b>Virement</b> de la trésorerie.</p>
+    <div class="panneau"><div class="defil"><table><thead><tr><th>Situation</th><th>Date</th><th>Compte</th><th>N°</th><th>Libellé</th>
+      <th class="montant">Montant</th><th class="montant">Depuis</th><th></th></tr></thead>
+      <tbody>${attente.length ? attente.map(t => {
+        const sortie = t.statut === "En transit", d = sortie ? t.date_sortie : t.date_entree;
+        return `<tr><td><span class="pastille ${sortie ? "attente" : "alerte"}">${sortie ? "Parti, pas arrivé" : "Arrivé sans départ"}</span></td>
+          <td class="code">${esc(dateCourte(d))}</td><td>${esc(sortie ? t.compte_sortie : t.compte_entree)}</td>
+          <td class="code">${esc(sortie ? t.numero_sortie : t.numero_entree)}</td><td>${esc(t.libelle)}</td>
+          <td class="montant">${fcfa(t.montant)}</td><td class="montant">${ecartJours(d, date)} j</td>
+          <td class="actions-ligne">${droitsCompleter ? `<button class="btn" data-completer="${esc(sortie ? t.sortie_id : t.entree_id)}">${sortie ? "Saisir l'arrivée" : "Saisir le départ"}</button>` : ""}
+            ${peutApparier(t) ? `<button class="btn" data-apparier="${esc(t.sortie_id)}">Apparier</button>` : ""}</td></tr>`;
+      }).join("") : `<tr><td colspan="8" class="vide">Aucun fonds en transit : chaque sortie a son arrivée.</td></tr>`}</tbody></table></div>
+      <details style="margin-top:.75rem"><summary>${apparies.length} transfert(s) rapproché(s)</summary>
+        <div class="defil"><table><thead><tr><th>Parti le</th><th>De</th><th>Arrivé le</th><th>Vers</th><th>Libellé</th><th class="montant">Montant</th><th></th></tr></thead>
+        <tbody>${apparies.slice().reverse().map(t => { const m = manuels.find(x => x.sortie_id === t.sortie_id);
+          return `<tr><td class="code">${esc(dateCourte(t.date_sortie))}</td><td>${esc(t.compte_sortie)}</td><td class="code">${esc(dateCourte(t.date_entree))}</td>
+            <td>${esc(t.compte_entree)}</td><td>${esc(t.libelle)}${m ? ` <span class="pastille" title="${esc(m.motif)}">Apparié à la main</span>` : ""}</td>
+            <td class="montant">${fcfa(t.montant)}</td><td>${m && peut(CORRECTION) ? `<button class="btn-lien" data-dissocier="${esc(t.sortie_id)}">Dissocier</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>
+      </details></div>`;
+
+  const ouvrirCompte = param => aller("tresorerie", param);
+  $$("tr[data-compte]").forEach(tr => tr.onclick = () => ouvrirCompte({ compte: tr.dataset.compte }));
+  $$("[data-voir]").forEach(b => b.onclick = () => ouvrirCompte(JSON.parse(b.dataset.voir)));
+  $$("#contenu [data-aller]").forEach(b => b.onclick = () => aller(b.dataset.aller));
+  $("#st-lien-transit").onclick = e => { e.preventDefault(); $("#transit").scrollIntoView({ behavior: "smooth" }); };
+  $("#st-date").onchange = () => { if ($("#st-date").value) aller("situation_tresorerie", { date: $("#st-date").value }); };
+  $$("[data-completer]").forEach(b => b.onclick = () => formulaireCompleterTransfert(
+    attente.find(t => t.sortie_id === b.dataset.completer || t.entree_id === b.dataset.completer), sit, recharger));
+  $$("[data-apparier]").forEach(b => b.onclick = () => formulaireApparier(attente.find(t => t.sortie_id === b.dataset.apparier), attente, recharger));
+  $$("[data-dissocier]").forEach(b => b.onclick = async () => {
+    if (!confirm("Dissocier ces deux moitiés ? Elles redeviendront « en transit ».")) return;
+    try { await appeler("dissocier_transferts", { p_sortie: b.dataset.dissocier }); } catch (err) { return toast(messageErreur(err), true); }
+    toast("Appariement retiré."); recharger();
+  });
+  const lignesExport = () => sit.map(s => [s.code, s.libelle, s.type, Number(s.solde_debut_mois), Number(s.entrees_mois), Number(s.sorties_mois), Number(s.solde),
+    s.negatif_depuis ? dateCourte(s.negatif_depuis) : "", s.releve_fin ? dateCourte(s.releve_fin) : "", s.releve_fin ? Number(s.releve_solde) : "", ecartRel(s) ?? ""]);
+  const entetes = ["Code", "Compte", "Type", "Début du mois", "Entrées du mois", "Sorties du mois", `Solde au ${dateCourte(date)}`, "Négatif depuis", "Dernier relevé", "Solde relevé", "Écart"];
+  $("#st-export").onclick = () => exporterTableau(`situation_tresorerie_${date}.xlsx`, entetes, lignesExport(), `Situation de trésorerie au ${dateCourte(date)}`);
+  $("#st-imprimer").onclick = () => imprimerHtml(`Situation de trésorerie au ${dateCourte(date)}`, `<h1>Situation de trésorerie au ${esc(dateCourte(date))}</h1>
+    <table><thead><tr><th>Compte</th><th class="montant">Début du mois</th><th class="montant">Entrées</th><th class="montant">Sorties</th><th class="montant">Solde</th><th>Dernier relevé</th></tr></thead>
+    <tbody>${sit.map(s => `<tr><td>${esc(s.code)} – ${esc(s.libelle)}</td><td class="montant">${fcfa(s.solde_debut_mois)}</td><td class="montant">${fcfa(s.entrees_mois)}</td>
+      <td class="montant">${fcfa(s.sorties_mois)}</td><td class="montant"><b>${fcfa(s.solde)}</b></td>
+      <td>${s.releve_fin ? `${esc(dateCourte(s.releve_fin))} : ${fcfa(s.releve_solde)}${ecartRel(s) ? ` (écart ${fcfa(ecartRel(s))})` : ""}` : "—"}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Total</td><td colspan="3"></td><td class="montant"><b>${fcfa(total)}</b></td><td></td></tr></tfoot></table>
+    <p>Fonds en transit (compte 585) : <b>${fcfa(transit)} FCFA</b>${attente.length ? ` — ${attente.length} transfert(s) sans contrepartie.` : "."}</p>`);
+}
+
+/* La moitié manquante d'un transfert : l'arrivée d'une sortie, ou le départ d'une arrivée. */
+function formulaireCompleterTransfert(t, sit, retour) {
+  if (!t) return;
+  const sortie = t.statut === "En transit", code = sortie ? t.compte_sortie : t.compte_entree, d = sortie ? t.date_sortie : t.date_entree;
+  ouvrirModale(sortie ? "Saisir l'arrivée du transfert" : "Saisir le départ du transfert", `
+    <p>${esc(sortie ? t.numero_sortie : t.numero_entree)} — ${esc(t.libelle)} : <b>${fcfa(t.montant)} FCFA</b> ${sortie ? "sortis de" : "arrivés sur"} <b>${esc(code)}</b>
+      le ${esc(dateCourte(d))}.</p>
+    <p class="discret petit">${sortie ? "L'argent est bien arrivé quelque part, mais l'arrivée n'a pas été saisie (la caisse secondaire s'arrêtait plus tôt dans le classeur, par exemple)."
+      : "L'argent est arrivé, mais sa sortie de l'autre compte n'a pas été saisie."} L'opération créée solde le compte d'attente 585.</p>
+    <div class="grille2"><div><label for="ct-compte">${sortie ? "Arrivé sur" : "Parti de"} *</label><select id="ct-compte"><option value="">—</option>
+      ${sit.filter(s => s.code !== code).map(s => `<option value="${s.id}">${esc(s.code)} – ${esc(s.libelle)}</option>`).join("")}</select></div>
+      <div><label for="ct-date">${sortie ? "Date d'arrivée" : "Date de départ"} *</label><input type="date" id="ct-date" value="${esc(d)}"></div></div>`, {
+    libelleSave: "Enregistrer",
+    onSave: async () => {
+      if (!$("#ct-compte").value) return "Choisissez le compte.";
+      try { await appeler("completer_transfert", { p_op: sortie ? t.sortie_id : t.entree_id, p_compte: $("#ct-compte").value, p_date: $("#ct-date").value || null }); }
+      catch (err) { return messageErreur(err); }
+      toast("Transfert complété."); retour();
+    }
+  });
+}
+
+/* Deux moitiés de même montant trop éloignées en date pour le rapprochement automatique (chèque crédité un mois plus tard…). */
+function formulaireApparier(t, attente, retour) {
+  if (!t) return;
+  const cands = attente.filter(a => a.statut === "Arrivée sans départ" && Number(a.montant) === Number(t.montant) && a.compte_entree !== t.compte_sortie && a.date_entree >= t.date_sortie);
+  ouvrirModale("Apparier un transfert", `<p>${esc(t.numero_sortie)} — ${esc(t.libelle)} : <b>${fcfa(t.montant)} FCFA</b> sortis de <b>${esc(t.compte_sortie)}</b> le ${esc(dateCourte(t.date_sortie))}.</p>
+    <label for="ap-entree">Arrivée correspondante *</label><select id="ap-entree">${cands.map(a => `<option value="${a.entree_id}">${esc(dateCourte(a.date_entree))} · ${esc(a.compte_entree)} · ${esc(a.numero_entree)} — ${esc(a.libelle)}</option>`).join("")}</select>
+    <label for="ap-motif">Motif *</label><textarea id="ap-motif" placeholder="Ex. : chèque déposé le 01/08, crédité le 31/08"></textarea>`, {
+    libelleSave: "Apparier",
+    onSave: async () => {
+      const m = $("#ap-motif").value.trim();
+      if (!m) return "Indiquez le motif.";
+      try { await appeler("apparier_transferts", { p_sortie: t.sortie_id, p_entree: $("#ap-entree").value, p_motif: m }); } catch (err) { return messageErreur(err); }
+      toast("Transfert rapproché."); retour();
+    }
+  });
 }
 
 /* Fiche d'une opération : son écriture, son historique de corrections, et ce qu'on peut en faire. */
@@ -2102,6 +2296,8 @@ async function ouvrirOperation(o, retour) {
   if (!o.annulee && peut(CORRECTION) && ["Dépense", "Recette"].includes(o.type)) actions.push(`<button type="button" class="btn" id="a-reclasser">Reclasser ou ventiler</button>`);
   if (!o.annulee && peut(CORRECTION) && o.type === "Règlement fournisseur" && !o.achat_id)
     actions.push(`<button type="button" class="btn" id="a-affecter">${o.fournisseur_id ? "Rattacher à un achat" : "Affecter au fournisseur"}</button>`);
+  if (!o.annulee && peut(CORRECTION) && o.payeur === "Trésorerie" && o.compte_tresorerie_id)
+    actions.push(`<button type="button" class="btn" id="a-compte">Changer de compte</button>`);
   if (peut(CORRECTION) && o.reprise_statut === "Importée, à revoir") actions.push(`<button type="button" class="btn" id="a-revu">Marquer comme revue</button>`);
   actions.push(`<button type="button" class="btn" id="a-imprimer">Imprimer la pièce</button>`);
   if (!o.annulee && !o.exercice_anterieur && peut(VALIDATION) && o.reprise && o.type === "Dépense" && o.date_operation <= ((etat.entite || {}).debut_exercice || "2026-01-01"))
@@ -2137,6 +2333,7 @@ async function ouvrirOperation(o, retour) {
   const clic = (id, fn) => { if ($("#" + id)) $("#" + id).onclick = fn; };
   clic("a-reclasser", () => formulaireReclassement(o, retour));
   clic("a-affecter", () => formulaireAffectation(o, retour));
+  clic("a-compte", () => formulaireChangementCompte(o, retour));
   clic("a-revu", () => formulaireRevue(o.reprise_ligne_id, retour));
   clic("a-imprimer", () => imprimerPieceOperation(o, lignes));
   clic("a-2025", () => formulaireMotif(`Rattacher ${o.numero} à l'exercice 2025`,
@@ -2221,6 +2418,31 @@ function formulaireReclassement(o, retour) {
   };
   $("#v-ajout").onclick = () => { $("#v-corps").insertAdjacentHTML("beforeend", ligneHtml({})); brancher(); };
   brancher();
+}
+
+/* L'argent est passé par un autre compte que celui saisi (encaissement arrivé sur le sous-compte…) :
+   une écriture d'OD datée du jour de l'opération le déplace, l'opération garde sa trace. */
+function formulaireChangementCompte(o, retour) {
+  const entree = ["Recette", "Encaissement client"].includes(o.type);
+  const comptes = (etat.refs.comptes_tresorerie || []).filter(c => c.actif !== false && c.id !== o.compte_tresorerie_id
+    && !(o.type === "Virement" && c.id === o.compte_destination_id));
+  ouvrirModale(`Changer le compte de ${o.numero}`, `<p>${esc(o.libelle)} — <b>${fcfa(o.montant)} FCFA</b> du ${esc(dateCourte(o.date_operation))},
+      ${entree ? "encaissé sur" : "payé par"} <b>${esc(o.compte_code || "")}</b>.</p>
+    <p class="discret petit">À utiliser quand le relevé montre que l'argent est ${entree ? "arrivé" : "sorti"} sur un autre compte.
+      Une écriture d'opérations diverses, datée du ${esc(dateCourte(o.date_operation))}, ${entree ? "retire le montant de l'ancien compte et l'ajoute au nouveau"
+      : "rend le montant à l'ancien compte et le retire du nouveau"} : les deux soldes sont corrigés à la bonne date, et la trace reste.</p>
+    <label for="cc-compte">${entree ? "Compte qui a réellement encaissé" : "Compte qui a réellement payé"} *</label>
+    <select id="cc-compte"><option value="">—</option>${comptes.map(c => `<option value="${c.id}">${esc(c.code)} – ${esc(c.libelle)}</option>`).join("")}</select>
+    <label for="cc-motif">Motif *</label><textarea id="cc-motif" placeholder="Ex. : crédité sur le sous-compte selon le relevé BGFI d'octobre"></textarea>`, {
+    libelleSave: "Changer de compte",
+    onSave: async () => {
+      const c = $("#cc-compte").value, m = $("#cc-motif").value.trim();
+      if (!c) return "Choisissez le compte.";
+      if (!m) return "Indiquez le motif.";
+      try { await appeler("changer_compte_operation", { p_id: o.id, p_compte: c, p_motif: m }); } catch (err) { return messageErreur(err); }
+      toast("Compte changé : les deux soldes sont corrigés."); retour();
+    }
+  });
 }
 
 function formulaireAffectation(o, retour) {
@@ -6333,7 +6555,7 @@ const PAGES_FINANCES = {
   immobilisations: pageImmobilisations, exploitant: pageExploitant, rapprochements: pageRapprochements,
   paie: pagePaie, conges: pageConges,
   ventes: pageVentes, creances: pageCreances, stock: pageStock,
-  tresorerie: pageTresorerie, achats: pageAchats, dettes: pageDettes, consultation: pageConsultation,
+  tresorerie: pageTresorerie, situation_tresorerie: pageSituationTresorerie, achats: pageAchats, dettes: pageDettes, consultation: pageConsultation,
   journaux: pageJournaux, grand_livre: pageGrandLivre, balance: pageBalance, periodes: pagePeriodes, reprise: pageReprise
 };
 
