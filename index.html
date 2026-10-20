@@ -275,6 +275,20 @@ table.pivot td.clic:hover{background:var(--registre-clair)}
 table.pivot td,table.pivot th{padding:.5rem .6rem}
 .chiffres b.negatif{color:var(--rouge)}
 tr.clic{cursor:pointer} tr.clic:hover td{background:var(--registre-clair)}
+/* Parc et tournée (lot 10) : cartes lisibles sur téléphone, gros boutons. */
+.cartes-parc{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:1rem;margin-top:1rem}
+.carte-veh,.carte-tournee{border:1px solid var(--trait);border-radius:var(--rayon);padding:1rem;background:var(--surface);display:flex;flex-direction:column;gap:.5rem}
+.carte-veh-tete{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+dl.mini{display:grid;grid-template-columns:auto 1fr;gap:.15rem .75rem;margin:0;font-size:.88rem} dl.mini dt{color:var(--encre-douce)} dl.mini dd{margin:0}
+.tournee{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:1rem}
+.tournee h2{margin:1rem 0 0}
+.carte-tournee ul.articles{margin:.25rem 0;padding-left:1.1rem}
+.gros-btn{display:block;width:100%;text-align:center;padding:.9rem 1rem;font-size:1rem;white-space:normal;cursor:pointer}
+label.gros-btn.envoi{opacity:.6;pointer-events:none}
+.deux-btn{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.ligne-recep{display:grid;grid-template-columns:1fr auto;gap:.4rem .75rem;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--trait)}
+.ligne-recep input[data-motif]{grid-column:1/-1}
+input.champ-photo{font-size:.85rem;max-width:100%}
 svg.courbe{display:block} svg.courbe polyline{stroke-width:1.6} svg.courbe .pos{stroke:var(--registre)} svg.courbe .neg{stroke:var(--rouge)}
 svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
 @media print{
@@ -312,10 +326,15 @@ const ROLES = {
   comptable: "Comptable",
   tresorier: "Trésorier (toute la trésorerie)",
   caissier: "Caissier (ses caisses seulement)",
+  vendeur: "Saisie des ventes",
+  commercial: "Commercial (prépare les ventes)",
   manager: "Manager de catégorie",
   rh: "Ressources humaines",
   auditeur: "Auditeur",
   dg: "Direction générale",
+  supply_chain: "Responsable supply chain",
+  supply_chain_adjoint: "Responsable supply chain adjoint",
+  livreur: "Livreur",
   salarie: "Salarié (espace personnel)"
 };
 const ROLES_DESCRIPTION = {
@@ -324,10 +343,15 @@ const ROLES_DESCRIPTION = {
   comptable: "Enregistre les ventes et les encaissements, tient les fournisseurs et les produits.",
   tresorier: "Paie les achats validés, tient les caisses, les banques et le Mobile Money : voit toute la trésorerie.",
   caissier: "Tient seulement les caisses dont il est désigné responsable (Comptes de trésorerie › Responsable) : y saisit les dépenses et recettes, confirme les approvisionnements reçus. Ne voit ni les autres comptes, ni la comptabilité.",
+  vendeur: "Enregistre et valide les ventes (factures du site E-Commerce, B2B) et leur encaissement ; tient les clients. Ne voit ni la comptabilité ni les autres opérations de trésorerie.",
+  commercial: "Prépare les ventes : clients, proformas, factures en brouillon, relances, suivi des livraisons ; consulte les ventes et créances. N'encaisse pas et ne valide pas.",
   manager: "Saisit les achats de ses catégories de produits. Ne valide ni ne paie.",
   rh: "Tient les dossiers du personnel et prépare la paie. Ne paie pas.",
   auditeur: "Consulte tout, y compris le journal des modifications. Ne modifie rien.",
   dg: "Consulte les états et le tableau de bord.",
+  supply_chain: "Parc automobile (fiches, documents, entretiens), valide les relevés kilométriques et entretiens de son adjoint, organise enlèvements et livraisons.",
+  supply_chain_adjoint: "Saisit les relevés kilométriques, entretiens et pannes, enlèvements chez les fournisseurs et livraisons ; le responsable supply chain valide.",
+  livreur: "Sur téléphone : ses livraisons et enlèvements du jour, photo du bon de livraison signé, signalement d'une panne.",
   salarie: "Son espace personnel seulement : dossier, bulletins, congés, demandes, évaluations ; un responsable y voit aussi son équipe. Accès ouvert depuis la fiche du personnel."
 };
 // Les rôles de gestion ; le rôle « salarie » n'a que son espace personnel.
@@ -404,7 +428,7 @@ const ENTITES = {
   },
   clients: {
     table: "clients", titre: "Clients", singulier: "un client", ordre: "nom",
-    ecriture: ["admin", "daf", "comptable"], lecture: FINANCE, prefixe: "C", largeur: 4,
+    ecriture: ["admin", "daf", "comptable", "vendeur", "commercial"], lecture: [...FINANCE, "vendeur", "commercial"], prefixe: "C", largeur: 4,
     aide: "Particuliers de la boutique en ligne et entreprises du B2B. Le délai de paiement fixe l'échéance des factures ; le plafond de crédit sert au suivi des créances.",
     filtres: [{ k: "canal", l: "Tous les canaux", options: ["E-Commerce", "B2B"] }, { k: "type", l: "Tous les types", options: ["Particulier", "Entreprise", "Administration", "Exploitant"] }],
     champs: [
@@ -642,10 +666,14 @@ const NAV = [
   { id: "rapprochements", l: "Rapprochements bancaires", roles: FINANCE },
   { id: "exploitant", l: "Compte de l'exploitant", roles: FINANCE },
   { id: "immobilisations", l: "Immobilisations", roles: FINANCE },
+  { groupe: "Supply chain", roles: ["supply_chain", "supply_chain_adjoint", "daf", "admin", "auditeur", "dg", "comptable", "commercial", "vendeur", "livreur"] },
+  { id: "ma_tournee", l: "Ma tournée", roles: ["livreur"] },
+  { id: "parc", l: "Parc automobile", roles: ["supply_chain", "supply_chain_adjoint", "daf", "admin", "auditeur", "dg", "comptable"] },
+  { id: "logistique", l: "Livraisons et enlèvements", roles: ["supply_chain", "supply_chain_adjoint", "daf", "admin", "auditeur", "dg", "comptable", "commercial", "vendeur"] },
   { groupe: "Ventes", roles: TOUS },
-  { id: "ventes", l: "Ventes et factures", roles: FINANCE },
-  { id: "creances", l: "Créances clients", roles: FINANCE },
-  { id: "clients", l: "Clients", roles: FINANCE },
+  { id: "ventes", l: "Ventes et factures", roles: [...FINANCE, "vendeur", "commercial"] },
+  { id: "creances", l: "Créances clients", roles: [...FINANCE, "vendeur", "commercial"] },
+  { id: "clients", l: "Clients", roles: [...FINANCE, "vendeur", "commercial"] },
   { id: "stock", l: "Stock", roles: TOUS },
   { groupe: "Ressources humaines", roles: ["rh", "daf", "admin", "auditeur", "dg", "tresorier"] },
   { id: "personnel", l: "Dossier du personnel", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
@@ -673,6 +701,7 @@ const NAV = [
   { groupe: "Administration", roles: [...new Set([...GESTION, ...LECTEURS_JOURNAL, "dg"])] },
   { id: "parametres", l: "Paramètres de l'entité", roles: TOUS.filter(r => r !== "manager") },
   { id: "utilisateurs", l: "Utilisateurs", roles: [...GESTION, "auditeur", "dg"] },
+  { id: "postes", l: "Postes et droits", roles: [...GESTION, "auditeur", "dg"] },
   { id: "journal", l: "Journal des modifications", roles: LECTEURS_JOURNAL },
   { groupe: "Compte", roles: TOUT_LE_MONDE },
   { id: "profil", l: "Mon profil", roles: TOUT_LE_MONDE }
@@ -814,7 +843,7 @@ async function entrer(session) {
   if (error || !data || !data.actif) return ecranEnAttente();
   const demandee = location.hash.replace("#/", "");
   await chargerMonEspace();
-  etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_dossier" : "accueil";
+  etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_dossier" : estLivreurSeul() ? "ma_tournee" : "accueil";
   rendreCoque();
 }
 
@@ -950,12 +979,12 @@ const ic = (nom, taille = 18) => `<svg class="ic" width="${taille}" height="${ta
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONES[nom] || ICONES.document}"/></svg>`;
 const ICONE_PAGE = {
   accueil: "accueil", tableau_de_bord: "grille", etats: "document", analytique: "camembert", budget: "cible", achats: "panier", tresorerie: "portefeuille",
-  situation_tresorerie: "courbe",
+  situation_tresorerie: "courbe", parc: "voiture", logistique: "camion", ma_tournee: "repere",
   dettes: "facture", consultation: "loupe", rapprochements: "banque", exploitant: "personne", immobilisations: "immeuble", ventes: "facture", creances: "alerte",
   clients: "groupe", stock: "carton", personnel: "groupe", paie: "billet", conges: "calendrier", journaux: "livre", grand_livre: "livre", balance: "balance",
   periodes: "calendrier", etalements: "couches", reprise: "import", fournisseurs: "camion", produits: "carton", categories_produit: "etiquette",
   categories_operation: "etiquette", plan_comptable: "liste", activites: "mallette", sites: "repere", vehicules: "voiture", comptes_tresorerie: "banque",
-  parametres: "reglages", utilisateurs: "bouclier", journal: "historique", profil: "personne",
+  parametres: "reglages", utilisateurs: "bouclier", postes: "mallette", journal: "historique", profil: "personne",
   mon_dossier: "personne", mes_conges: "calendrier", mes_bulletins: "billet", mes_demandes: "document", mes_evaluations: "cible", mon_equipe: "groupe",
   demandes_personnel: "document", evaluations: "cible"
 };
@@ -1063,6 +1092,7 @@ async function aller(page, param = {}) {
     if (ENTITES[page]) await pageEntite(page);
     else if (PAGES_FINANCES[page]) await PAGES_FINANCES[page]();
     else if (page === "utilisateurs") await pageUtilisateurs();
+    else if (page === "postes") await pagePostes();
     else if (page === "parametres") await pageParametres();
     else if (page === "journal") await pageJournal();
     else if (page === "profil") pageProfil();
@@ -1098,7 +1128,8 @@ async function pageAccueil() {
   if (peut(GESTION)) ({ count: enAttente } = await sb.from("profils").select("id", { count: "exact", head: true }).eq("actif", false));
 
   const ICONE_TRAITER = { achats: "panier", paie: "billet", personnel: "groupe", conges: "calendrier", ventes: "facture", creances: "alerte", stock: "carton",
-    immobilisations: "immeuble", etalements: "couches", rapprochements: "banque", utilisateurs: "bouclier", tresorerie: "portefeuille", situation_tresorerie: "courbe" };
+    immobilisations: "immeuble", etalements: "couches", rapprochements: "banque", utilisateurs: "bouclier", tresorerie: "portefeuille", situation_tresorerie: "courbe",
+    parc: "voiture", logistique: "camion", ma_tournee: "repere" };
   // Un point = un titre (la partie en gras) et une précision.
   const items = [...faire, ...points, ...(enAttente ? [{ texte: `<b>${enAttente} compte(s) en attente</b> d'activation.`, page: "utilisateurs", bouton: "Activer" }] : [])].map(pt => {
     const m = /^<b>([\s\S]*?)<\/b>\s*:?\s*([\s\S]*)$/.exec(pt.texte || "");
@@ -1387,8 +1418,10 @@ function formulaireEntite(cle, ligne, toutes) {
    messagerie intégrée de Supabase n'envoie que deux e-mails par heure.
    ===================================================================== */
 async function pageUtilisateurs() {
-  const { data, error } = await sb.from("profils").select("*").order("actif").order("nom");
+  const [{ data, error }, { data: postes }] = await Promise.all([sb.from("profils").select("*").order("actif").order("nom"),
+    sb.from("postes").select("*").order("libelle")]);
   if (error) throw error;
+  etat.postes = postes || [];
   const modif = estGestionnaire();
   $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Utilisateurs</h1>
       <p class="discret">Chacun reçoit un lien pour choisir son mot de passe ; son rôle détermine ce qu'il voit et ce qu'il peut faire.</p></div>
@@ -1396,7 +1429,7 @@ async function pageUtilisateurs() {
     <div class="panneau"><div class="outils"><input type="text" id="filtre" placeholder="Rechercher…" aria-label="Rechercher">
       <select id="f-role" aria-label="Filtrer par rôle"><option value="">Tous les rôles</option>
       ${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
-    <div class="defil"><table><thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th>Statut</th>${modif ? "<th></th>" : ""}</tr></thead>
+    <div class="defil"><table><thead><tr><th>Nom</th><th>E-mail</th><th>Poste</th><th>Droits</th><th>Statut</th>${modif ? "<th></th>" : ""}</tr></thead>
     <tbody id="corps"></tbody></table></div></div>
     <h2 class="titre-section">Ce que chaque rôle peut faire</h2>
     <div class="panneau defil"><table><tbody>${Object.entries(ROLES).map(([k, v]) =>
@@ -1406,10 +1439,10 @@ async function pageUtilisateurs() {
     const lignes = data.filter(u => (!r || u.role === r) && (!q || [u.nom, u.prenom, u.email, u.fonction].join(" ").toLowerCase().includes(q)));
     $("#corps").innerHTML = lignes.map(u => `<tr>
       <td><b>${esc(nomComplet(u))}</b>${u.fonction ? `<div class="discret">${esc(u.fonction)}</div>` : ""}</td>
-      <td>${esc(u.email)}</td><td>${esc(ROLES[u.role])}${(u.roles_supplementaires || []).length ? `<div class="discret petit">+ ${esc(u.roles_supplementaires.map(r => ROLES[r] || r).join(", "))}</div>` : ""}</td>
+      <td>${esc(u.email)}</td><td>${esc((etat.postes.find(p => p.id === u.poste_id) || {}).libelle || "—")}</td><td>${esc(ROLES[u.role])}${(u.roles_supplementaires || []).length ? `<div class="discret petit">+ ${esc(u.roles_supplementaires.map(r => ROLES[r] || r).join(", "))}</div>` : ""}</td>
       <td><span class="pastille ${u.actif ? "" : "attente"}">${u.actif ? "Actif" : "En attente"}</span></td>
       ${modif ? `<td><div class="actions-ligne"><button class="btn" data-edit="${u.id}">Modifier</button></div></td>` : ""}</tr>`).join("")
-      || `<tr><td colspan="5" class="vide">Aucun utilisateur ne correspond.</td></tr>`;
+      || `<tr><td colspan="6" class="vide">Aucun utilisateur ne correspond.</td></tr>`;
     $$("[data-edit]").forEach(b => b.onclick = () => formulaireUtilisateur(data.find(u => u.id === b.dataset.edit)));
   };
   $("#filtre").oninput = dessiner; $("#f-role").onchange = dessiner;
@@ -1442,6 +1475,7 @@ function formulaireInvitation() {
       <div>${champFormulaire({ k: "nom", l: "Nom", req: true }, "", false, "u-")}</div>
       <div>${champFormulaire({ k: "email", l: "Adresse e-mail", req: true }, "", false, "u-")}</div>
       <div>${champFormulaire({ k: "fonction", l: "Fonction" }, "", false, "u-")}</div>
+      <div style="grid-column:1/-1">${champPoste("u-poste", null, true)}</div>
       <div><label for="u-role">Rôle *</label><select id="u-role">
         ${roles.map(([k, v]) => `<option value="${k}"${k === "comptable" ? " selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <p class="aide-champ" id="u-role-aide"></p></div>
@@ -1468,6 +1502,10 @@ function formulaireInvitation() {
       try {
         r = await appelerGestionUtilisateurs({ action: "inviter", mode, email, nom, prenom,
           fonction: lireChamp({ k: "fonction" }, "u-"), role: $("#u-role").value, roles_supplementaires: lireActivites("u-act") });
+        if ($("#u-poste").value && r.id) {
+          const { error: ep } = await sb.rpc("attribuer_poste", { p_profil: r.id, p_poste: $("#u-poste").value });
+          if (ep) r.avertissement = "Accès créé, mais le poste n'a pas pu être attribué : " + messageErreur(ep);
+        }
       } catch (err) { return err.message; }
       setTimeout(() => {
         if (r.lien) afficherLienAcces(r.lien, { prenom: prenom || nom, email, nouveau: true });
@@ -1480,6 +1518,88 @@ function formulaireInvitation() {
   const aide = () => ($("#u-role-aide").textContent = ROLES_DESCRIPTION[$("#u-role").value] || "");
   $("#u-role").onchange = aide; aide();
   brancherActivites("u-act", "#u-role");
+  brancherPoste("u-poste", "#u-role", "u-act", aide);
+}
+
+/* Poste : un modèle de droits défini par le DAF. Choisi, il fixe le rôle et les activités (qui ne se modifient plus à la main). */
+function champPoste(id, valeur, invitation) {
+  const postes = (etat.postes || []).filter(p => p.actif || p.id === valeur);
+  return `<label for="${id}">Poste</label><select id="${id}"><option value="">Aucun poste : droits choisis à la main</option>
+    ${postes.map(p => { const salarie = invitation && p.droits[0] === "salarie";
+      return `<option value="${p.id}" ${p.id === valeur ? "selected" : ""} ${salarie ? "disabled" : ""}>${esc(p.libelle)}${salarie ? " — accès à ouvrir depuis sa fiche du personnel" : ""}</option>`; }).join("")}</select>
+    <p class="aide-champ" id="${id}-aide"></p>`;
+}
+function brancherPoste(id, selRole, prefixeAct, aide) {
+  const maj = () => {
+    const p = (etat.postes || []).find(x => x.id === $("#" + id).value);
+    $(selRole).disabled = !!p;
+    if (p) { $(selRole).value = p.droits[0]; $(selRole).dispatchEvent(new Event("change")); }
+    $$(`[data-act="${prefixeAct}"]`).forEach(c => {
+      if (p) { c.checked = p.droits.slice(1).includes(c.value); c.disabled = true; } else c.disabled = c.value === $(selRole).value;
+    });
+    $("#" + id + "-aide").textContent = p ? `Droits du poste : ${p.droits.map(d => ROLES[d] || d).join(" + ")}. Pour les changer, modifiez le poste (Postes et droits) : tous ses titulaires suivent.` : "";
+    if (aide) aide();
+  };
+  $("#" + id).onchange = maj; maj();
+}
+
+async function pagePostes() {
+  const [{ data: postes, error }, { data: profs }] = await Promise.all([sb.from("postes").select("*").order("libelle"),
+    sb.from("profils").select("id, nom, prenom, email, poste_id, actif")]);
+  if (error) throw error;
+  etat.postes = postes || [];
+  const modif = estGestionnaire();
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Postes et droits</h1>
+      <p class="discret">Chaque poste de l'entreprise donne des droits dans l'application. Attribuez un poste à un utilisateur (Utilisateurs › Modifier) :
+      il reçoit ces droits. Modifier un poste met à jour tous ses titulaires.</p></div>
+      ${modif ? `<div class="actions-ligne"><button class="btn btn-principal" id="b-poste">Nouveau poste</button></div>` : ""}</div>
+    <div class="panneau defil"><table><thead><tr><th>Poste</th><th>Droits</th><th>Titulaires</th><th>Statut</th>${modif ? "<th></th>" : ""}</tr></thead><tbody>
+    ${etat.postes.map(p => { const t = (profs || []).filter(u => u.poste_id === p.id);
+      return `<tr><td><b>${esc(p.libelle)}</b>${p.description ? `<div class="discret petit">${esc(p.description)}</div>` : ""}</td>
+        <td>${p.droits.map((d, i) => `<span class="pastille ${i ? "" : "ok"}" title="${esc(ROLES_DESCRIPTION[d] || "")}">${esc(ROLES[d] || d)}</span>`).join(" ")}</td>
+        <td>${t.length ? t.map(u => esc(nomComplet(u))).join(", ") : `<span class="discret">Aucun</span>`}</td>
+        <td><span class="pastille ${p.actif ? "" : "inactif"}">${p.actif ? "Actif" : "Inactif"}</span></td>
+        ${modif ? `<td><button class="btn" data-poste="${p.id}">Modifier</button></td>` : ""}</tr>`; }).join("")}</tbody></table></div>
+    <h2 class="titre-section">Les droits disponibles</h2>
+    <div class="panneau defil"><table><tbody>${Object.entries(ROLES).map(([k, v]) =>
+      `<tr><td style="white-space:nowrap"><b>${esc(v)}</b></td><td>${esc(ROLES_DESCRIPTION[k])}</td></tr>`).join("")}</tbody></table></div>`;
+  if ($("#b-poste")) $("#b-poste").onclick = () => formulairePoste(null);
+  $$("[data-poste]").forEach(b => b.onclick = () => formulairePoste(etat.postes.find(p => p.id === b.dataset.poste)));
+}
+
+function formulairePoste(p) {
+  const moiAdmin = peut(["admin"]), droits = p ? p.droits : ["salarie"];
+  const choix = Object.entries(ROLES).filter(([k]) => moiAdmin || k !== "admin" || droits.includes("admin"));
+  ouvrirModale(p ? "Modifier le poste" : "Nouveau poste", `
+    <div class="grille2"><div><label for="po-lib">Intitulé du poste *</label><input type="text" id="po-lib" value="${esc(p ? p.libelle : "")}"></div>
+      <div><label for="po-princ">Droit principal *</label><select id="po-princ">${choix.map(([k, v]) => `<option value="${k}" ${k === droits[0] ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+        <p class="aide-champ" id="po-aide"></p></div></div>
+    <label for="po-desc">Description</label><input type="text" id="po-desc" value="${esc(p ? p.description || "" : "")}" placeholder="Ce que fait la personne, en une phrase">
+    <fieldset style="border:0;padding:0;margin:1rem 0 0"><legend><b>Droits supplémentaires</b></legend>
+      <p class="discret petit" style="margin:.2rem 0 .4rem">Pour un poste qui cumule plusieurs activités (« Espace personnel seulement » ne se cumule pas).</p>
+      <div class="grille2">${choix.filter(([k]) => k !== "salarie").map(([k, v]) => `<label class="case" style="margin-top:.35rem"><input type="checkbox" data-po value="${k}" ${droits.slice(1).includes(k) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</div>
+      <div id="po-cumul" style="margin-top:.5rem"></div></fieldset>
+    ${p ? `<label class="case" style="margin-top:1rem"><input type="checkbox" id="po-actif" ${p.actif ? "checked" : ""}> Poste actif</label>` : ""}`, {
+    large: true, libelleSave: p ? "Enregistrer" : "Créer le poste",
+    onSave: async () => {
+      const lib = $("#po-lib").value.trim(), princ = $("#po-princ").value;
+      if (!lib) return "Indiquez l'intitulé du poste.";
+      const d = [princ, ...(princ === "salarie" ? [] : $$("[data-po]:checked").map(c => c.value).filter(x => x !== princ))];
+      const v = { libelle: lib, description: $("#po-desc").value.trim() || null, droits: d, ...(p ? { actif: $("#po-actif").checked } : {}) };
+      const { error } = p ? await sb.from("postes").update(v).eq("id", p.id) : await sb.from("postes").insert(v);
+      if (error) return /duplicate|unique/i.test(error.message) ? "Un poste porte déjà cet intitulé." : messageErreur(error);
+      toast(p ? "Poste mis à jour : ses titulaires suivent." : "Poste créé."); aller("postes");
+    }
+  });
+  const maj = () => {
+    const princ = $("#po-princ").value;
+    $("#po-aide").textContent = ROLES_DESCRIPTION[princ] || "";
+    $$("[data-po]").forEach(c => { c.disabled = princ === "salarie" || c.value === princ; if (c.disabled) c.checked = false; });
+    const tous = [princ, ...$$("[data-po]:checked").map(c => c.value)];
+    const al = CUMULS_SENSIBLES.filter(([r]) => r.every(x => tous.includes(x))).map(([r, t]) => `${r.map(x => ROLES[x]).join(" + ")} : ${t}`);
+    $("#po-cumul").innerHTML = al.length ? `<div class="info"><b>Contrôle allégé.</b> ${al.map(esc).join("<br>")}</div>` : "";
+  };
+  $("#po-princ").onchange = maj; $$("[data-po]").forEach(c => c.onchange = maj); maj();
 }
 
 /* Le lien d'accès, à copier ou à envoyer. Il ouvre le compte : on le rappelle. */
@@ -1517,6 +1637,7 @@ function formulaireUtilisateur(u) {
       <div>${champFormulaire({ k: "prenom", l: "Prénom" }, u.prenom)}</div>
       <div>${champFormulaire({ k: "nom", l: "Nom" }, u.nom)}</div>
       <div>${champFormulaire({ k: "fonction", l: "Fonction" }, u.fonction)}</div>
+      <div style="grid-column:1/-1">${champPoste("ch-poste", u.poste_id, false)}</div>
       <div><label for="ch-role">Rôle *</label><select id="ch-role" ${bloqueRole ? "disabled" : ""}>
         ${rolesPossibles.map(([k, v]) => `<option value="${k}" ${k === u.role ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <p class="aide-champ" id="ch-role-aide"></p></div>
@@ -1534,8 +1655,14 @@ function formulaireUtilisateur(u) {
         prenom: lireChamp({ k: "prenom" }), nom: lireChamp({ k: "nom" }), fonction: lireChamp({ k: "fonction" }),
         role: $("#ch-role").value, actif: $("#ch-actif").checked, roles_supplementaires: lireActivites("ch-act")
       };
+      const poste = $("#ch-poste").value || null;
+      if (poste) { delete donnees.role; delete donnees.roles_supplementaires; }
       const { error } = await sb.from("profils").update(donnees).eq("id", u.id);
       if (error) return messageErreur(error);
+      if (poste !== (u.poste_id || null)) {
+        const { error: ep } = await sb.rpc("attribuer_poste", { p_profil: u.id, p_poste: poste });
+        if (ep) return messageErreur(ep);
+      }
       toast("Utilisateur mis à jour.");
       if (soi) { const { data } = await sb.from("profils").select("*").eq("id", u.id).single(); etat.profil = data; rendreCoque(); }
       else aller("utilisateurs");
@@ -1544,6 +1671,7 @@ function formulaireUtilisateur(u) {
   const aide = () => ($("#ch-role-aide").textContent = ROLES_DESCRIPTION[$("#ch-role").value] || "");
   $("#ch-role").onchange = aide; aide();
   brancherActivites("ch-act", "#ch-role");
+  brancherPoste("ch-poste", "#ch-role", "ch-act", aide);
   if ($("#b-lien-u")) $("#b-lien-u").onclick = async () => {
     const b = $("#b-lien-u"); b.disabled = true;
     try {
@@ -1855,7 +1983,7 @@ async function aFaireFinances() {
     const n = await compter(sb.from("conges").select("id", { count: "exact", head: true }).eq("statut", "Demandé"));
     if (n) pts.push({ texte: `<b>${n} demande(s) de congé</b> attendent une décision.`, page: "conges", bouton: "Décider" });
   }
-  if (peut(VENTE)) {
+  if (peut(PREPARE_VENTE)) {
     const n = await compter(sb.from("documents_vente").select("id", { count: "exact", head: true }).eq("statut", "Brouillon").in("type", ["Facture", "Avoir"]));
     if (n) pts.push({ texte: `<b>${n} facture(s) ou avoir(s) en brouillon</b> : tant qu'ils ne sont pas validés, ils ne comptent ni en chiffre d'affaires ni en stock.`, page: "ventes", param: { onglet: "brouillons" }, bouton: "Valider" });
   }
@@ -1915,6 +2043,7 @@ async function aFaireFinances() {
     const n = await compter(sb.from("releves_bancaires").select("id", { count: "exact", head: true }).eq("statut", "En cours"));
     if (n) pts.push({ texte: `<b>${n} rapprochement(s) bancaire(s)</b> en cours, à terminer et valider.`, page: "rapprochements", bouton: "Rapprocher" });
   }
+  await aFaireSupply(pts);
   if (peut(CORRECTION)) {
     const n = await compter(sb.from("reprise_lignes").select("id", { count: "exact", head: true }).eq("statut", "Importée, à revoir"));
     if (n) pts.push({ texte: `<b>${n} ligne(s) reprises du classeur</b> sont à revoir : catégories à ventiler, bureaux à indiquer, règlements à affecter.`, page: "reprise", bouton: "Revoir" });
@@ -3285,7 +3414,10 @@ async function pageReprise() {
    Le stock sort au coût moyen pondéré à la validation de la facture.
    ===================================================================== */
 const VENTE = ["admin", "daf", "comptable"];
-const LIVRAISON = ["admin", "daf", "comptable", "tresorier"];
+// Préparer (proformas, brouillons) / valider et encaisser : séparés depuis les postes (lot 10a).
+const PREPARE_VENTE = [...VENTE, "vendeur", "commercial"];
+const VALIDE_VENTE = [...VENTE, "vendeur"];
+const LIVRAISON = ["admin", "daf", "comptable", "tresorier", "vendeur", "commercial", "supply_chain", "supply_chain_adjoint"];
 const CLASSE_DOC = { Brouillon: "inactif", "Envoyée": "attente", "Acceptée": "", "Refusée": "alerte", "Facturée": "ok", "Validée": "ok", "Annulée": "alerte" };
 const ONGLETS_VENTES = [
   { k: "ecom", l: "E-Commerce", f: d => d.canal === "E-Commerce" && d.type === "Facture" },
@@ -3338,7 +3470,7 @@ async function pageVentes() {
   await chargerRefsVentes();
   let onglet = etat.param.onglet || etat.ongletVentes || "ecom";
   const docs = await chargerTout(() => sb.from("v_documents_vente").select("*").order("date_document", { ascending: false }).order("created_at", { ascending: false }));
-  const nouveau = peut(VENTE) ? `<button class="btn btn-principal" data-nouveau="ecom">Vente E-Commerce</button>
+  const nouveau = peut(PREPARE_VENTE) ? `<button class="btn btn-principal" data-nouveau="ecom">Vente E-Commerce</button>
     <button class="btn" data-nouveau="proforma">Proforma B2B</button><button class="btn" data-nouveau="b2b">Facture B2B</button>` : "";
   $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Ventes et factures</h1>
       <p class="discret">Ventes de la boutique en ligne et ventes aux entreprises. Une facture reçoit son numéro définitif à la validation, qui passe
@@ -3402,7 +3534,7 @@ async function pageVentes() {
   $("#filtre").oninput = dessiner;
   $$("[data-nouveau]").forEach(b => b.onclick = () => formulaireDocument({
     type: b.dataset.nouveau === "proforma" ? "Proforma" : "Facture", canal: b.dataset.nouveau === "ecom" ? "E-Commerce" : "B2B",
-    comptant: b.dataset.nouveau === "ecom" }, recharger));
+    comptant: b.dataset.nouveau === "ecom" && peut(VALIDE_VENTE) }, recharger));
   $("#b-export").onclick = () => exporterTableau("ventes.xlsx", ["Type", "N°", "Date", "Canal", "Client", "Objet", "Montant", "Encaissé", "Avoirs", "Reste", "Échéance", "Statut", "Livraison"],
     visibles().map(d => [d.type, d.numero, dateCourte(d.date_document), d.canal, d.client, d.objet, d.montant, d.encaisse, d.avoirs, d.reste ?? "",
       dateCourte(d.date_echeance), d.statut, d.livraison || ""]), `Ventes — ${ong().l}`);
@@ -3420,8 +3552,8 @@ async function ouvrirDocument(d, retour) {
   if (rl.error) return toast(messageErreur(rl.error), true);
   const lignes = rl.data || [], encs = ro.data || [], lies = [...(ra.data || []), ...(rf.data || [])], relances = rr.data || [];
   const a = [], brouillon = d.statut === "Brouillon";
-  if (peut(VENTE)) {
-    if (brouillon && d.type !== "Proforma") a.push(`<button type="button" class="btn btn-principal" id="a-valider">Valider ${d.type === "Avoir" ? "l'avoir" : "la facture"}</button>`);
+  if (peut(PREPARE_VENTE)) {
+    if (brouillon && d.type !== "Proforma" && peut(VALIDE_VENTE)) a.push(`<button type="button" class="btn btn-principal" id="a-valider">Valider ${d.type === "Avoir" ? "l'avoir" : "la facture"}</button>`);
     if (d.type === "Proforma" && ["Brouillon", "Envoyée", "Acceptée"].includes(d.statut)) a.push(`<button type="button" class="btn btn-principal" id="a-facturer">Facturer</button>`);
     if (d.type === "Proforma" && d.statut === "Brouillon") a.push(`<button type="button" class="btn" data-statut="Envoyée">Marquer envoyée</button>`);
     if (d.type === "Proforma" && ["Envoyée"].includes(d.statut)) a.push(`<button type="button" class="btn" data-statut="Acceptée">Acceptée par le client</button>`,
@@ -3430,9 +3562,9 @@ async function ouvrirDocument(d, retour) {
     if (d.type === "Proforma" && ["Envoyée", "Acceptée", "Refusée"].includes(d.statut)) a.push(`<button type="button" class="btn btn-danger" id="a-annuler">Annuler</button>`);
   }
   const facture = d.type === "Facture" && d.statut === "Validée";
-  if (facture && Number(d.reste) > 0 && peut(RECETTE)) a.push(`<button type="button" class="btn btn-principal" id="a-encaisser">Encaisser</button>`);
+  if (facture && Number(d.reste) > 0 && peut([...RECETTE, "vendeur"])) a.push(`<button type="button" class="btn btn-principal" id="a-encaisser">Encaisser</button>`);
   if (facture && peut(VENTE)) a.push(`<button type="button" class="btn" id="a-avoir">Établir un avoir</button>`);
-  if (facture && Number(d.reste) > 0 && peut(VENTE)) a.push(`<button type="button" class="btn" id="a-relancer">Noter une relance</button>`);
+  if (facture && Number(d.reste) > 0 && peut([...VENTE, "commercial"])) a.push(`<button type="button" class="btn" id="a-relancer">Noter une relance</button>`);
   if (facture && d.canal === "E-Commerce" && peut(LIVRAISON)) a.push(`<button type="button" class="btn" id="a-livraison">Livraison</button>`);
   a.push(`<button type="button" class="btn" id="a-imprimer">Imprimer</button>`);
   if (facture && Number(d.reste) > 0) a.push(`<button type="button" class="btn" id="a-lettre">Lettre de relance</button>`);
@@ -6594,9 +6726,618 @@ const PAGES_FINANCES = {
   immobilisations: pageImmobilisations, exploitant: pageExploitant, rapprochements: pageRapprochements,
   paie: pagePaie, conges: pageConges,
   ventes: pageVentes, creances: pageCreances, stock: pageStock,
-  tresorerie: pageTresorerie, situation_tresorerie: pageSituationTresorerie, achats: pageAchats, dettes: pageDettes, consultation: pageConsultation,
+  tresorerie: pageTresorerie, situation_tresorerie: pageSituationTresorerie, achats: pageAchats,
+  parc: pageParc, logistique: pageLogistique, ma_tournee: pageMaTournee, dettes: pageDettes, consultation: pageConsultation,
   journaux: pageJournaux, grand_livre: pageGrandLivre, balance: pageBalance, periodes: pagePeriodes, reprise: pageReprise
 };
+
+/* =====================================================================
+   Lot 10 — Parc automobile et supply chain
+   L'adjoint saisit (relevés, entretiens, enlèvements, livraisons), le
+   responsable supply chain valide ; le livreur travaille sur son téléphone
+   (« Ma tournée ») : photo du bon de livraison signé, réception chez le
+   fournisseur, signalement d'une panne. La dépense reste payée par la caisse.
+   ===================================================================== */
+const PARC_LECTEURS = ["supply_chain", "supply_chain_adjoint", "daf", "admin", "auditeur", "dg", "comptable"];
+const PARC_SAISIE = ["supply_chain", "supply_chain_adjoint", "daf", "admin"];
+const PARC_VALIDE = ["supply_chain", "daf", "admin"];
+const LOGISTIQUE = [...PARC_SAISIE, "commercial", "vendeur"];
+const TYPES_DOC_VEH = ["Carte grise", "Assurance", "Visite technique", "Vignette", "Taxe à l'essieu", "Carte bleue", "Patente de transport", "Permis de conduire", "Autre"];
+const TYPES_ENTRETIEN = ["Vidange", "Pneus", "Révision", "Réparation", "Panne", "Autre"];
+const USAGES_VEH = ["Livraisons E-Commerce", "Déplacements administratifs", "Véhicule de service", "Transport"];
+const STATUTS_VEH = ["En service", "En panne", "Au garage", "Hors service"];
+const CLASSE_ECHEANCE = { "Expiré": "alerte", "Manquant": "alerte", "Sous 7 jours": "alerte", "Sous 30 jours": "attente", "À jour": "ok", "Sans échéance": "inactif" };
+const CLASSE_STATUT_VEH = { "En service": "ok", "En panne": "alerte", "Au garage": "attente", "Hors service": "inactif" };
+const CLASSE_SAISIE = { Saisi: "attente", "Validé": "ok", "Refusé": "alerte" };
+const CLASSE_LIVRAISON = { "À livrer": "attente", "En cours": "attente", "Livrée": "ok", "Échouée": "alerte", "Reportée": "attente", "Annulée": "inactif" };
+const estLivreurSeul = () => peut(["livreur"]) && !peut([...LOGISTIQUE, "auditeur", "dg", "comptable"]);
+
+/* Photos prises au téléphone : réduites (1600 px, JPEG) avant l'envoi, pour les connexions lentes. */
+async function compresserImage(f, max = 1600, q = 0.8) {
+  if (!/^image\/(jpeg|png|webp)$/.test(f.type)) return f;
+  try {
+    const img = await createImageBitmap(f);
+    const k = Math.min(1, max / Math.max(img.width, img.height));
+    if (k === 1 && f.size < 900000) return f;
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const b = await new Promise(r => c.toBlob(r, "image/jpeg", q));
+    return b ? new File([b], (f.name || "photo").replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : f;
+  } catch (e) { return f; }
+}
+async function deposerSupply(dossier, f) {
+  if (!f) return null;
+  const g = await compresserImage(f);
+  if (g.size > 10 * 1024 * 1024) throw new Error("Fichier trop lourd (10 Mo au plus).");
+  const ext = ((g.name || "").match(/\.(\w+)$/) || [, g.type === "application/pdf" ? "pdf" : "jpg"])[1].toLowerCase();
+  const chemin = `${dossier}/${(crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(16).slice(2))}.${ext}`;
+  const { error } = await sb.storage.from("supply").upload(chemin, g, { contentType: g.type || undefined, upsert: false });
+  if (error) throw error;
+  return chemin;
+}
+async function voirFichierSupply(chemin) {
+  const { data, error } = await sb.storage.from("supply").createSignedUrl(chemin, 300);
+  if (error) return toast(messageErreur(error), true);
+  window.open(data.signedUrl, "_blank", "noopener");
+}
+const champPhoto = (id, libelle, requis = false) => `<label for="${id}">${esc(libelle)}${requis ? " *" : ""}</label>
+  <input type="file" id="${id}" accept="image/*,application/pdf" capture="environment" class="champ-photo">`;
+const fichierDe = id => ($("#" + id) && $("#" + id).files && $("#" + id).files[0]) || null;
+
+async function chargerRefsParc() {
+  const [v, p] = await Promise.all([sb.from("vehicules").select("*").order("libelle"),
+    sb.from("profils").select("id, nom, prenom, email, role, roles_supplementaires, actif").eq("actif", true).order("nom")]);
+  if (v.error) throw v.error;
+  etat.parc = { vehicules: v.data || [], profils: p.data || [] };
+}
+const nomVeh = id => (etat.parc.vehicules.find(v => v.id === id) || {}).libelle || "";
+const nomPers = id => { const p = (etat.parc.profils || []).find(x => x.id === id); return p ? nomComplet(p) : ""; };
+const optVeh = (val, vide = "—") => `<option value="">${esc(vide)}</option>` + etat.parc.vehicules.filter(v => v.actif || v.id === val)
+  .map(v => `<option value="${v.id}" ${v.id === val ? "selected" : ""}>${esc(v.libelle)}${v.immatriculation ? " · " + esc(v.immatriculation) : ""}</option>`).join("");
+const optPers = (val, filtre = () => true, vide = "—") => `<option value="">${esc(vide)}</option>` + (etat.parc.profils || []).filter(filtre)
+  .map(p => `<option value="${p.id}" ${p.id === val ? "selected" : ""}>${esc(nomComplet(p))}</option>`).join("");
+const estChauffeur = p => [p.role, ...(p.roles_supplementaires || [])].some(r => ["livreur", "supply_chain", "supply_chain_adjoint"].includes(r));
+const moisPrecedent = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return { annee: d.getFullYear(), mois: d.getMonth() + 1 }; };
+
+/* ---------------------------------------------------------------------
+   Parc automobile
+   --------------------------------------------------------------------- */
+const ONGLETS_PARC = [["vehicules", "Véhicules"], ["echeances", "Documents et échéances"], ["entretiens", "Entretiens"], ["releves", "Relevés kilométriques"],
+  ["carburant", "Carburant"], ["incidents", "Incidents"]];
+async function pageParc() {
+  await chargerRefsParc();
+  const onglet = etat.param.onglet || etat.ongletParc || "vehicules";
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Parc automobile</h1>
+      <p class="discret">État des véhicules, papiers et échéances, entretiens, relevé mensuel du kilométrage comparé au carburant payé par la caisse.
+      ${peut(PARC_VALIDE) ? "Vous validez les saisies de l'adjoint." : peut(PARC_SAISIE) ? "Vos saisies sont validées par le responsable supply chain." : ""}</p></div>
+      <div class="actions-ligne" id="parc-actions"></div></div>
+    <div class="panneau"><div class="onglets" role="tablist">${ONGLETS_PARC.map(([k, l]) => `<button role="tab" data-onglet="${k}" aria-selected="${k === onglet}">${esc(l)}</button>`).join("")}</div>
+      <div id="parc-corps"><p class="vide">Chargement…</p></div></div>`;
+  $$("[data-onglet]").forEach(b => b.onclick = () => { etat.ongletParc = b.dataset.onglet; etat.param = {}; aller("parc"); });
+  const f = { vehicules: ongletVehicules, echeances: ongletEcheances, entretiens: ongletEntretiens, releves: ongletReleves, carburant: ongletCarburant, incidents: ongletIncidents }[onglet];
+  try { await f(); } catch (err) { $("#parc-corps").innerHTML = `<div class="erreur">${esc(messageErreur(err))}</div>`; }
+}
+
+async function ongletVehicules() {
+  const [{ data: ech }, { data: rel }] = await Promise.all([sb.from("v_echeances_parc").select("*"),
+    sb.from("releves_km").select("vehicule_id, annee, mois, kilometrage, statut").order("annee", { ascending: false }).order("mois", { ascending: false })]);
+  const pire = id => { const e = (ech || []).filter(x => x.vehicule_id === id); const o = ["Expiré", "Manquant", "Sous 7 jours", "Sous 30 jours"];
+    for (const k of o) { const n = e.filter(x => x.etat === k).length; if (n) return `<span class="pastille ${CLASSE_ECHEANCE[k]}">${n} ${esc(k.toLowerCase())}</span>`; }
+    return e.length ? `<span class="pastille ok">Papiers à jour</span>` : ""; };
+  const dernierKm = id => (rel || []).find(r => r.vehicule_id === id && r.statut !== "Refusé");
+  if (peut(GESTION)) $("#parc-actions").innerHTML = `<button class="btn btn-principal" id="b-veh">Nouveau véhicule</button>`;
+  $("#parc-corps").innerHTML = `<div class="cartes-parc">${etat.parc.vehicules.filter(v => v.actif).map(v => { const k = dernierKm(v.id);
+    return `<article class="carte-veh"><div class="carte-veh-tete"><b>${esc(v.libelle)}</b><span class="pastille ${CLASSE_STATUT_VEH[v.statut] || ""}">${esc(v.statut || "")}</span></div>
+      <div class="discret petit">${esc([v.type, v.marque, v.modele, v.immatriculation].filter(Boolean).join(" · ") || "Fiche à compléter")}</div>
+      <dl class="mini"><dt>Usage</dt><dd>${esc(v.usage || "—")}</dd><dt>Chauffeur</dt><dd>${esc(nomPers(v.chauffeur_id) || "—")}</dd>
+        <dt>Compteur</dt><dd>${k ? `${Number(k.kilometrage).toLocaleString("fr-FR")} km <span class="discret">(${String(k.mois).padStart(2, "0")}/${k.annee})</span>` : v.km_initial ? `${Number(v.km_initial).toLocaleString("fr-FR")} km (initial)` : "—"}</dd></dl>
+      <div>${pire(v.id)}</div>
+      ${peut(PARC_VALIDE) ? `<button class="btn" data-fiche="${v.id}">Modifier la fiche</button>` : ""}</article>`; }).join("")
+    || `<p class="vide">Aucun véhicule actif.</p>`}</div>`;
+  $$("[data-fiche]").forEach(b => b.onclick = () => formulaireVehicule(etat.parc.vehicules.find(v => v.id === b.dataset.fiche)));
+  if ($("#b-veh")) $("#b-veh").onclick = () => formulaireVehicule(null);
+}
+
+function formulaireVehicule(v) {
+  const x = v || { actif: true, statut: "En service" };
+  ouvrirModale(v ? `Fiche — ${v.libelle}` : "Nouveau véhicule", `<div class="grille2">
+      <div><label for="ve-lib">Désignation *</label><input type="text" id="ve-lib" value="${esc(x.libelle || "")}" ${v ? "" : ""}></div>
+      <div><label for="ve-code">Code *</label><input type="text" id="ve-code" value="${esc(x.code || "")}" ${v ? "disabled" : ""}></div>
+      <div><label for="ve-type">Type *</label><select id="ve-type">${TYPES_VEHICULE.map(t => `<option ${t === x.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div><label for="ve-immat">Immatriculation</label><input type="text" id="ve-immat" value="${esc(x.immatriculation || "")}"></div>
+      <div><label for="ve-marque">Marque</label><input type="text" id="ve-marque" value="${esc(x.marque || "")}"></div>
+      <div><label for="ve-modele">Modèle</label><input type="text" id="ve-modele" value="${esc(x.modele || "")}"></div>
+      <div><label for="ve-annee">Année</label><input type="number" id="ve-annee" min="1980" max="2100" value="${esc(x.annee || "")}"></div>
+      <div><label for="ve-mes">Mise en service</label><input type="date" id="ve-mes" value="${esc(x.date_mise_service || "")}"></div>
+      <div><label for="ve-usage">Usage</label><select id="ve-usage"><option value="">—</option>${USAGES_VEH.map(t => `<option ${t === x.usage ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div><label for="ve-statut">Statut</label><select id="ve-statut">${STATUTS_VEH.map(t => `<option ${t === x.statut ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div><label for="ve-chauf">Chauffeur habituel</label><select id="ve-chauf">${optPers(x.chauffeur_id)}</select></div>
+      <div><label for="ve-km">Compteur de départ (km)</label><input type="number" id="ve-km" min="0" value="${esc(x.km_initial ?? "")}"></div>
+      <div><label for="ve-kmd">Date du compteur de départ</label><input type="date" id="ve-kmd" value="${esc(x.date_km_initial || "")}"></div>
+    </div><label for="ve-obs">Observation</label><textarea id="ve-obs">${esc(x.observation || "")}</textarea>`, {
+    large: true,
+    onSave: async () => {
+      const val = id => $("#" + id).value.trim() || null;
+      const d = { libelle: val("ve-lib"), type: $("#ve-type").value, immatriculation: val("ve-immat"), marque: val("ve-marque"), modele: val("ve-modele"),
+        annee: val("ve-annee") ? Number(val("ve-annee")) : null, date_mise_service: val("ve-mes"), usage: val("ve-usage"), statut: $("#ve-statut").value,
+        chauffeur_id: val("ve-chauf"), km_initial: val("ve-km") ? Number(val("ve-km")) : null, date_km_initial: val("ve-kmd"), observation: val("ve-obs") };
+      if (!d.libelle) return "Indiquez la désignation.";
+      if (!v && !val("ve-code")) return "Indiquez le code.";
+      const { error } = v ? await sb.from("vehicules").update(d).eq("id", v.id) : await sb.from("vehicules").insert({ ...d, code: val("ve-code"), actif: true });
+      if (error) return messageErreur(error);
+      toast("Fiche du véhicule enregistrée."); recharger();
+    }
+  });
+}
+
+async function ongletEcheances() {
+  const { data, error } = await sb.from("v_echeances_parc").select("*");
+  if (error) throw error;
+  const ordre = { "Expiré": 0, "Manquant": 1, "Sous 7 jours": 2, "Sous 30 jours": 3, "Sans échéance": 4, "À jour": 5 };
+  const lignes = (data || []).slice().sort((a, b) => (ordre[a.etat] - ordre[b.etat]) || String(a.date_fin || "").localeCompare(String(b.date_fin || "")));
+  if (peut(PARC_SAISIE)) $("#parc-actions").innerHTML = `<button class="btn btn-principal" id="b-doc">Ajouter ou renouveler un document</button>`;
+  $("#parc-corps").innerHTML = `<p class="discret">Le document le plus récent de chaque type fait foi. Alerte sur l'accueil 30 jours puis 7 jours avant l'expiration.
+      Carte grise, assurance, visite technique et vignette sont attendues pour chaque véhicule en service.</p>
+    <div class="outils"><select id="f-etat" aria-label="État"><option value="">Tous les états</option>${Object.keys(ordre).map(k => `<option>${k}</option>`).join("")}</select></div>
+    <div class="defil"><table><thead><tr><th>Véhicule ou chauffeur</th><th>Document</th><th>N°</th><th>Valable du</th><th>au</th><th>État</th><th></th></tr></thead><tbody id="corps-ech"></tbody></table></div>`;
+  const dessiner = () => {
+    const f = $("#f-etat").value;
+    $("#corps-ech").innerHTML = lignes.filter(l => !f || l.etat === f).map(l => `<tr>
+      <td>${esc(l.vehicule_id ? nomVeh(l.vehicule_id) : nomPers(l.chauffeur_id))}</td><td>${esc(l.type)}</td><td>${esc(l.numero || "")}</td>
+      <td class="code">${esc(dateCourte(l.date_debut))}</td><td class="code">${esc(dateCourte(l.date_fin))}</td>
+      <td><span class="pastille ${CLASSE_ECHEANCE[l.etat] || ""}">${esc(l.etat)}${l.jours_restants != null && l.jours_restants >= 0 && l.etat !== "À jour" ? ` · ${l.jours_restants} j` : ""}</span></td>
+      <td class="actions-ligne">${l.fichier ? `<button class="btn-lien" data-voir="${esc(l.fichier)}">Voir</button>` : ""}
+        ${peut(PARC_SAISIE) ? `<button class="btn" data-renouv='${esc(JSON.stringify({ vehicule_id: l.vehicule_id, chauffeur_id: l.chauffeur_id, type: l.type }))}'>${l.document_id ? "Renouveler" : "Ajouter"}</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="7" class="vide">Aucun document.</td></tr>`;
+    $$("[data-voir]").forEach(b => b.onclick = () => voirFichierSupply(b.dataset.voir));
+    $$("[data-renouv]").forEach(b => b.onclick = () => formulaireDocumentVehicule(JSON.parse(b.dataset.renouv)));
+  };
+  $("#f-etat").onchange = dessiner; dessiner();
+  if ($("#b-doc")) $("#b-doc").onclick = () => formulaireDocumentVehicule({});
+}
+
+function formulaireDocumentVehicule(x) {
+  ouvrirModale("Document du parc", `<div class="grille2">
+      <div><label for="dv2-type">Document *</label><select id="dv2-type">${TYPES_DOC_VEH.map(t => `<option ${t === x.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div id="dv2-veh-bloc"><label for="dv2-veh">Véhicule *</label><select id="dv2-veh">${optVeh(x.vehicule_id)}</select></div>
+      <div id="dv2-ch-bloc" hidden><label for="dv2-ch">Chauffeur *</label><select id="dv2-ch">${optPers(x.chauffeur_id)}</select></div>
+      <div><label for="dv2-num">Numéro</label><input type="text" id="dv2-num"></div>
+      <div><label for="dv2-org">Assureur, centre ou administration</label><input type="text" id="dv2-org"></div>
+      <div><label for="dv2-deb">Valable du</label><input type="date" id="dv2-deb"></div>
+      <div><label for="dv2-fin">Expire le</label><input type="date" id="dv2-fin"></div>
+      <div><label for="dv2-mt">Montant payé (FCFA)</label><input type="number" id="dv2-mt" min="0"><p class="aide-champ">Pour mémoire : la dépense se saisit en caisse (catégorie Assurance véhicules, Vignette…).</p></div>
+      <div>${champPhoto("dv2-fic", "Document scanné ou photographié")}</div></div>`, {
+    large: true,
+    onSave: async () => {
+      const type = $("#dv2-type").value, permis = type === "Permis de conduire";
+      const d = { type, vehicule_id: permis ? null : $("#dv2-veh").value || null, chauffeur_id: permis ? $("#dv2-ch").value || null : null,
+        numero: $("#dv2-num").value.trim() || null, organisme: $("#dv2-org").value.trim() || null, date_debut: $("#dv2-deb").value || null,
+        date_fin: $("#dv2-fin").value || null, montant: $("#dv2-mt").value ? Number($("#dv2-mt").value) : null };
+      if (!d.vehicule_id && !d.chauffeur_id) return permis ? "Choisissez le chauffeur." : "Choisissez le véhicule.";
+      if (!d.date_fin && type !== "Carte grise") return "Indiquez la date d'expiration.";
+      try { d.fichier = await deposerSupply("documents", fichierDe("dv2-fic")); } catch (err) { return messageErreur(err); }
+      const { error } = await sb.from("documents_vehicule").insert(d);
+      if (error) return messageErreur(error);
+      toast("Document enregistré."); recharger();
+    }
+  });
+  const maj = () => { const p = $("#dv2-type").value === "Permis de conduire"; $("#dv2-veh-bloc").hidden = p; $("#dv2-ch-bloc").hidden = !p; };
+  $("#dv2-type").onchange = maj; maj();
+}
+
+async function ongletEntretiens() {
+  const { data, error } = await sb.from("entretiens_vehicule").select("*").order("date_entretien", { ascending: false });
+  if (error) throw error;
+  if (peut(PARC_SAISIE)) $("#parc-actions").innerHTML = `<button class="btn btn-principal" id="b-ent">Nouvel entretien ou réparation</button>`;
+  $("#parc-corps").innerHTML = `<p class="discret">La dépense est payée par la caisse (catégorie Entretien du véhicule) ; ici, le suivi technique : travaux, kilométrage, prochaine échéance.</p>
+    <div class="defil"><table><thead><tr><th>Date</th><th>Véhicule</th><th>Type</th><th class="montant">Km</th><th>Garage · travaux</th><th class="montant">Montant</th>
+      <th>Prochaine échéance</th><th>Statut</th><th></th></tr></thead><tbody>${(data || []).map(e => `<tr>
+      <td class="code">${esc(dateCourte(e.date_entretien))}</td><td>${esc(nomVeh(e.vehicule_id))}</td><td>${esc(e.type)}</td>
+      <td class="montant">${e.kilometrage != null ? Number(e.kilometrage).toLocaleString("fr-FR") : ""}</td>
+      <td>${esc([e.garage, e.travaux].filter(Boolean).join(" · "))}${e.motif_refus ? `<div class="discret petit">Refus : ${esc(e.motif_refus)}</div>` : ""}</td>
+      <td class="montant">${Number(e.montant) ? fcfa(e.montant) : ""}</td>
+      <td>${esc([e.prochaine_date ? dateCourte(e.prochaine_date) : "", e.prochain_km ? Number(e.prochain_km).toLocaleString("fr-FR") + " km" : ""].filter(Boolean).join(" ou "))}</td>
+      <td><span class="pastille ${CLASSE_SAISIE[e.statut]}">${esc(e.statut)}</span><div class="discret petit">${esc(nomPers(e.saisi_par))}</div></td>
+      <td class="actions-ligne">${e.fichier ? `<button class="btn-lien" data-voir="${esc(e.fichier)}">Facture</button>` : ""}
+        ${e.statut === "Saisi" && peut(PARC_VALIDE) ? `<button class="btn" data-valider-ent="${e.id}">Valider</button><button class="btn" data-refuser-ent="${e.id}">Refuser</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="9" class="vide">Aucun entretien enregistré.</td></tr>`}</tbody></table></div>`;
+  $$("[data-voir]").forEach(b => b.onclick = () => voirFichierSupply(b.dataset.voir));
+  $$("[data-valider-ent]").forEach(b => b.onclick = () => deciderSaisieParc("entretiens_vehicule", b.dataset.validerEnt, "Validé"));
+  $$("[data-refuser-ent]").forEach(b => b.onclick = () => deciderSaisieParc("entretiens_vehicule", b.dataset.refuserEnt, "Refusé"));
+  if ($("#b-ent")) $("#b-ent").onclick = () => formulaireEntretien();
+}
+
+function formulaireEntretien() {
+  ouvrirModale("Entretien, réparation ou panne", `<div class="grille2">
+      <div><label for="en2-veh">Véhicule *</label><select id="en2-veh">${optVeh(null)}</select></div>
+      <div><label for="en2-type">Type *</label><select id="en2-type">${TYPES_ENTRETIEN.map(t => `<option>${t}</option>`).join("")}</select></div>
+      <div><label for="en2-date">Date *</label><input type="date" id="en2-date" value="${aujourdhui()}"></div>
+      <div><label for="en2-km">Kilométrage au compteur</label><input type="number" id="en2-km" min="0"></div>
+      <div><label for="en2-gar">Garage</label><input type="text" id="en2-gar"></div>
+      <div><label for="en2-mt">Montant (FCFA)</label><input type="number" id="en2-mt" min="0"></div>
+      <div><label for="en2-pd">Prochaine échéance (date)</label><input type="date" id="en2-pd"></div>
+      <div><label for="en2-pk">Prochaine échéance (km)</label><input type="number" id="en2-pk" min="0"></div>
+    </div><label for="en2-trav">Travaux faits *</label><textarea id="en2-trav"></textarea>${champPhoto("en2-fic", "Facture du garage")}`, {
+    large: true,
+    onSave: async () => {
+      const d = { vehicule_id: $("#en2-veh").value || null, type: $("#en2-type").value, date_entretien: $("#en2-date").value || null,
+        kilometrage: $("#en2-km").value ? Number($("#en2-km").value) : null, garage: $("#en2-gar").value.trim() || null,
+        montant: Number($("#en2-mt").value || 0), prochaine_date: $("#en2-pd").value || null, prochain_km: $("#en2-pk").value ? Number($("#en2-pk").value) : null,
+        travaux: $("#en2-trav").value.trim() };
+      if (!d.vehicule_id) return "Choisissez le véhicule.";
+      if (!d.date_entretien) return "Indiquez la date.";
+      if (!d.travaux) return "Décrivez les travaux.";
+      try { d.fichier = await deposerSupply("entretiens", fichierDe("en2-fic")); } catch (err) { return messageErreur(err); }
+      const { error } = await sb.from("entretiens_vehicule").insert(d);
+      if (error) return messageErreur(error);
+      toast(peut(PARC_VALIDE) ? "Entretien enregistré." : "Entretien enregistré : il attend la validation du responsable supply chain."); recharger();
+    }
+  });
+}
+
+function deciderSaisieParc(table, id, decision) {
+  if (decision === "Validé") return sb.from(table).update({ statut: "Validé" }).eq("id", id).then(({ error }) => { if (error) toast(messageErreur(error), true); else { toast("Validé."); recharger(); } });
+  ouvrirModale("Refuser la saisie", `<label for="rf-motif">Motif *</label><textarea id="rf-motif"></textarea>`, {
+    libelleSave: "Refuser",
+    onSave: async () => {
+      const m = $("#rf-motif").value.trim(); if (!m) return "Indiquez le motif.";
+      const { error } = await sb.from(table).update({ statut: "Refusé", motif_refus: m }).eq("id", id);
+      if (error) return messageErreur(error);
+      toast("Saisie refusée."); recharger();
+    }
+  });
+}
+
+async function ongletReleves() {
+  const p = etat.param.periode || etat.periodeReleve || moisPrecedent();
+  etat.periodeReleve = p;
+  const { data, error } = await sb.from("releves_km").select("*").order("annee").order("mois");
+  if (error) throw error;
+  const rel = data || [];
+  const du = v => rel.find(r => r.vehicule_id === v && r.annee === p.annee && r.mois === p.mois);
+  const prec = v => rel.filter(r => r.vehicule_id === v && r.statut !== "Refusé" && r.annee * 12 + r.mois < p.annee * 12 + p.mois).pop();
+  const actifs = etat.parc.vehicules.filter(v => v.actif && v.statut !== "Hors service");
+  const aValider = actifs.filter(v => (du(v.id) || {}).statut === "Saisi");
+  $("#parc-actions").innerHTML = peut(PARC_VALIDE) && aValider.length ? `<button class="btn btn-principal" id="b-val-rel">Valider les ${aValider.length} relevé(s)</button>` : "";
+  $("#parc-corps").innerHTML = `<p class="discret">Chaque fin de mois, relevez le compteur de chaque véhicule (photo du compteur conseillée). Le responsable valide ;
+      l'onglet Carburant compare alors les kilomètres parcourus au carburant payé par la caisse.</p>
+    <div class="outils"><label class="discret" for="rl-mois" style="margin:0">Mois</label><input type="month" id="rl-mois" value="${p.annee}-${String(p.mois).padStart(2, "0")}" style="width:auto"></div>
+    <div class="defil"><table><thead><tr><th>Véhicule</th><th class="montant">Relevé précédent</th><th>Compteur au ${String(p.mois).padStart(2, "0")}/${p.annee}</th>
+      <th class="montant">Km parcourus</th><th>Photo</th><th>Statut</th><th></th></tr></thead><tbody>${actifs.map(v => { const r = du(v.id), q = prec(v.id);
+      const base = q ? Number(q.kilometrage) : v.km_initial != null ? Number(v.km_initial) : null;
+      const modifiable = peut(PARC_SAISIE) && (!r || r.statut !== "Validé" || peut(PARC_VALIDE));
+      return `<tr><td><b>${esc(v.libelle)}</b><div class="discret petit">${esc(v.immatriculation || "")}</div></td>
+        <td class="montant">${base != null ? base.toLocaleString("fr-FR") + " km" : "—"}</td>
+        <td>${modifiable ? `<input type="number" min="0" inputmode="numeric" data-km="${v.id}" value="${esc(r ? r.kilometrage : "")}" style="width:9rem">` : r ? Number(r.kilometrage).toLocaleString("fr-FR") + " km" : "—"}</td>
+        <td class="montant">${r && base != null ? (Number(r.kilometrage) - base).toLocaleString("fr-FR") : ""}</td>
+        <td>${r && r.photo ? `<button class="btn-lien" data-voir="${esc(r.photo)}">Voir</button>` : ""}${modifiable ? `<input type="file" accept="image/*" capture="environment" data-photo="${v.id}" class="champ-photo petit">` : ""}</td>
+        <td>${r ? `<span class="pastille ${CLASSE_SAISIE[r.statut]}">${esc(r.statut)}</span>${r.motif_refus ? `<div class="discret petit">${esc(r.motif_refus)}</div>` : ""}` : `<span class="pastille inactif">À relever</span>`}</td>
+        <td class="actions-ligne">${modifiable ? `<button class="btn" data-enr="${v.id}">Enregistrer</button>` : ""}
+          ${r && r.statut === "Saisi" && peut(PARC_VALIDE) ? `<button class="btn" data-refuser-rel="${r.id}">Refuser</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+  $("#rl-mois").onchange = () => { const [a, m] = $("#rl-mois").value.split("-").map(Number); if (a && m) { etat.periodeReleve = { annee: a, mois: m }; aller("parc", { onglet: "releves" }); } };
+  $$("[data-voir]").forEach(b => b.onclick = () => voirFichierSupply(b.dataset.voir));
+  $$("[data-refuser-rel]").forEach(b => b.onclick = () => deciderSaisieParc("releves_km", b.dataset.refuserRel, "Refusé"));
+  $$("[data-enr]").forEach(b => b.onclick = async () => {
+    const v = b.dataset.enr, km = $(`[data-km="${v}"]`).value, r = du(v);
+    if (km === "") return toast("Indiquez le kilométrage au compteur.", true);
+    b.disabled = true;
+    try {
+      const photo = await deposerSupply("releves", ($(`[data-photo="${v}"]`).files || [])[0]);
+      const fin = new Date(p.annee, p.mois, 0), d = { kilometrage: Number(km), ...(photo ? { photo } : {}) };
+      const { error } = r ? await sb.from("releves_km").update({ ...d, ...(r.statut === "Refusé" ? { statut: "Saisi", motif_refus: null } : {}) }).eq("id", r.id)
+        : await sb.from("releves_km").insert({ ...d, vehicule_id: v, annee: p.annee, mois: p.mois, date_releve: new Date(fin - fin.getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
+      if (error) throw error;
+      toast("Relevé enregistré."); aller("parc", { onglet: "releves" });
+    } catch (err) { b.disabled = false; toast(messageErreur(err), true); }
+  });
+  if ($("#b-val-rel")) $("#b-val-rel").onclick = async () => {
+    const ids = aValider.map(v => du(v.id).id);
+    const { error } = await sb.from("releves_km").update({ statut: "Validé" }).in("id", ids);
+    if (error) return toast(messageErreur(error), true);
+    toast("Relevés validés."); aller("parc", { onglet: "releves" });
+  };
+}
+
+async function ongletCarburant() {
+  const annee = etat.filtres.annee;
+  const lignes = await appeler("suivi_carburant", { p_annee: annee });
+  const vehs = [...new Map(lignes.map(l => [l.vehicule_id, l])).values()];
+  const cell = l => !l ? "" : `<div class="${l.anomalie ? "negatif" : ""}" title="${esc(l.anomalie || "")}">${l.km_parcourus != null ? `${Number(l.km_parcourus).toLocaleString("fr-FR")} km` : `<span class="discret">— km</span>`}
+    <div class="petit">${Number(l.carburant) ? fcfa(l.carburant) : ""}${l.cout_km != null ? ` · ${fcfa(l.cout_km)}/km` : ""}</div>${l.anomalie ? `<div class="petit">⚠ ${esc(l.anomalie)}</div>` : ""}</div>`;
+  const anomalies = lignes.filter(l => l.anomalie);
+  const annees = []; for (let a = 2026; a <= Math.max(2026, new Date().getFullYear()) + 1; a++) annees.push(a);
+  $("#parc-corps").innerHTML = `<div class="outils"><select id="cb-annee" aria-label="Année">${annees.map(a => `<option ${a === Number(annee) ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+    <p class="discret">Kilomètres du mois (relevés validés ou saisis) et carburant payé par la caisse pour chaque véhicule (catégories Carburant…). Une alerte apparaît
+      quand du carburant est payé sans relevé ou sans kilomètre, ou quand le coût au kilomètre dépasse de plus de 30 % la moyenne des trois mois précédents.</p>
+    ${anomalies.length ? `<div class="info"><b>${anomalies.length} point(s) à vérifier.</b> ${anomalies.slice(0, 6).map(a => `${esc(a.libelle)} (${MOIS[a.mois - 1].toLowerCase()}) : ${esc(a.anomalie)}`).join(" ; ")}${anomalies.length > 6 ? "…" : ""}</div>` : ""}
+    <div class="defil"><table class="pivot"><thead><tr><th>Véhicule</th>${MOIS_COURT.map(m => `<th>${m}</th>`).join("")}<th>Année</th></tr></thead><tbody>
+    ${vehs.map(v => { const ls = lignes.filter(l => l.vehicule_id === v.vehicule_id), km = ls.reduce((t, l) => t + Number(l.km_parcourus || 0), 0), c = ls.reduce((t, l) => t + Number(l.carburant || 0), 0);
+      return `<tr><td><b>${esc(v.libelle)}</b></td>${MOIS.map((_, i) => `<td>${cell(ls.find(l => l.mois === i + 1))}</td>`).join("")}
+        <td><b>${km.toLocaleString("fr-FR")} km</b><div class="petit">${fcfa(c)}${km ? ` · ${fcfa(Math.round(c / km))}/km` : ""}</div></td></tr>`; }).join("")}</tbody></table></div>`;
+  $("#cb-annee").onchange = () => { etat.filtres.annee = Number($("#cb-annee").value); aller("parc", { onglet: "carburant" }); };
+}
+
+async function ongletIncidents() {
+  const { data, error } = await sb.from("incidents_vehicule").select("*").order("date_incident", { ascending: false });
+  if (error) throw error;
+  if (peut(PARC_SAISIE)) $("#parc-actions").innerHTML = `<button class="btn btn-principal" id="b-inc">Signaler un incident</button>`;
+  $("#parc-corps").innerHTML = `<div class="defil"><table><thead><tr><th>Date</th><th>Véhicule</th><th>Nature</th><th>Description</th><th>Signalé par</th><th>Statut</th><th></th></tr></thead><tbody>
+    ${(data || []).map(i => `<tr><td class="code">${esc(dateCourte(i.date_incident))}</td><td>${esc(nomVeh(i.vehicule_id))}</td><td>${esc(i.nature)}</td>
+      <td>${esc(i.description)}${i.suite ? `<div class="discret petit">Suite : ${esc(i.suite)}</div>` : ""}</td><td>${esc(nomPers(i.signale_par))}</td>
+      <td><span class="pastille ${i.statut === "Clos" ? "ok" : i.statut === "Ouvert" ? "alerte" : "attente"}">${esc(i.statut)}</span></td>
+      <td class="actions-ligne">${i.photo ? `<button class="btn-lien" data-voir="${esc(i.photo)}">Photo</button>` : ""}
+        ${peut(PARC_SAISIE) && i.statut !== "Clos" ? `<button class="btn" data-suite="${i.id}">Suite donnée</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="7" class="vide">Aucun incident.</td></tr>`}</tbody></table></div>`;
+  $$("[data-voir]").forEach(b => b.onclick = () => voirFichierSupply(b.dataset.voir));
+  $$("[data-suite]").forEach(b => b.onclick = () => {
+    const i = (data || []).find(x => x.id === b.dataset.suite);
+    ouvrirModale("Suite donnée à l'incident", `<p>${esc(nomVeh(i.vehicule_id))} — ${esc(i.description)}</p>
+      <label for="is-statut">Statut</label><select id="is-statut"><option ${i.statut === "Pris en charge" ? "selected" : ""}>Pris en charge</option><option>Clos</option></select>
+      <label for="is-suite">Suite donnée *</label><textarea id="is-suite">${esc(i.suite || "")}</textarea>
+      <label class="case"><input type="checkbox" id="is-veh"> Remettre le véhicule « En service »</label>`, {
+      onSave: async () => {
+        const s = $("#is-suite").value.trim(); if (!s) return "Indiquez la suite donnée.";
+        const { error: e1 } = await sb.from("incidents_vehicule").update({ statut: $("#is-statut").value, suite: s }).eq("id", i.id);
+        if (e1) return messageErreur(e1);
+        if ($("#is-veh").checked && peut(PARC_VALIDE)) await sb.from("vehicules").update({ statut: "En service" }).eq("id", i.vehicule_id);
+        toast("Incident mis à jour."); recharger();
+      }
+    });
+  });
+  if ($("#b-inc")) $("#b-inc").onclick = () => formulaireIncident(recharger);
+}
+
+function formulaireIncident(retour) {
+  ouvrirModale("Signaler un incident", `<label for="in-veh">Véhicule *</label><select id="in-veh">${optVeh(null)}</select>
+    <label for="in-nat">Nature</label><select id="in-nat">${["Panne", "Accident", "Amende", "Vol", "Autre"].map(n => `<option>${n}</option>`).join("")}</select>
+    <label for="in-desc">Ce qui se passe *</label><textarea id="in-desc" placeholder="Ex. : le moteur chauffe, pneu crevé à Bonapriso…"></textarea>
+    ${champPhoto("in-photo", "Photo")}`, {
+    libelleSave: "Signaler",
+    onSave: async () => {
+      const d = { vehicule_id: $("#in-veh").value || null, nature: $("#in-nat").value, description: $("#in-desc").value.trim() };
+      if (!d.vehicule_id) return "Choisissez le véhicule.";
+      if (!d.description) return "Décrivez l'incident.";
+      try { d.photo = await deposerSupply("incidents", fichierDe("in-photo")); } catch (err) { return messageErreur(err); }
+      const { error } = await sb.from("incidents_vehicule").insert(d);
+      if (error) return messageErreur(error);
+      toast("Incident signalé à la supply chain."); retour();
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Livraisons et enlèvements
+   --------------------------------------------------------------------- */
+async function pageLogistique() {
+  await chargerRefsParc();
+  const onglet = etat.param.onglet || etat.ongletLogistique || "livraisons";
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Livraisons et enlèvements</h1>
+      <p class="discret">Livrer les clients (une livraison n'est faite qu'avec la photo du bon de livraison signé) et aller chercher les marchandises chez les fournisseurs
+      (les quantités récupérées sont comparées à l'achat).</p></div></div>
+    <div class="panneau"><div class="onglets" role="tablist">${[["livraisons", "Livraisons"], ["enlevements", "Enlèvements fournisseurs"]].map(([k, l]) =>
+      `<button role="tab" data-onglet="${k}" aria-selected="${k === onglet}">${l}</button>`).join("")}</div><div id="log-corps"><p class="vide">Chargement…</p></div></div>`;
+  $$("[data-onglet]").forEach(b => b.onclick = () => { etat.ongletLogistique = b.dataset.onglet; etat.param = {}; aller("logistique"); });
+  try { await (onglet === "enlevements" ? ongletEnlevements() : ongletLivraisons()); }
+  catch (err) { $("#log-corps").innerHTML = `<div class="erreur">${esc(messageErreur(err))}</div>`; }
+}
+
+async function ongletLivraisons() {
+  const [{ data: livs, error }, { data: ventes }] = await Promise.all([
+    sb.from("livraisons").select("*").order("date_prevue", { ascending: false }).limit(300),
+    sb.from("v_documents_vente").select("id, numero, date_document, client, client_id, montant, livraison, canal, adresse_livraison")
+      .eq("type", "Facture").eq("statut", "Validée").order("date_document", { ascending: false })]);
+  if (error) throw error;
+  const actives = new Set((livs || []).filter(l => !["Échouée", "Annulée", "Reportée"].includes(l.statut)).map(l => l.document_vente_id));
+  const aPlanifier = (ventes || []).filter(v => !["Livrée", "Retournée"].includes(v.livraison) && !actives.has(v.id));
+  const nomsClients = Object.fromEntries((ventes || []).map(v => [v.client_id, v.client]));
+  const peutPlanif = peut(LOGISTIQUE);
+  $("#log-corps").innerHTML = `${aPlanifier.length ? `<h2 style="margin-top:0">Ventes à livrer (${aPlanifier.length})</h2>
+      <div class="defil"><table><thead><tr><th>Facture</th><th>Date</th><th>Client</th><th class="montant">Montant</th><th></th></tr></thead><tbody>
+      ${aPlanifier.map(v => `<tr><td class="code">${esc(v.numero)}</td><td class="code">${esc(dateCourte(v.date_document))}</td><td>${esc(v.client)}</td>
+        <td class="montant">${fcfa(v.montant)}</td><td>${peutPlanif ? `<button class="btn" data-planif="${v.id}">Planifier</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    <h2>Livraisons</h2>
+    <div class="outils"><select id="f-st" aria-label="Statut"><option value="">Tous les statuts</option>${Object.keys(CLASSE_LIVRAISON).map(s => `<option>${s}</option>`).join("")}</select>
+      <input type="date" id="f-date" aria-label="Date prévue" style="width:auto"></div>
+    <div class="defil"><table><thead><tr><th>Prévue le</th><th>Client</th><th>Adresse</th><th>Livreur · véhicule</th><th>Statut</th><th></th></tr></thead><tbody id="corps-liv"></tbody></table></div>`;
+  const dessiner = () => {
+    const st = $("#f-st").value, d = $("#f-date").value;
+    $("#corps-liv").innerHTML = (livs || []).filter(l => (!st || l.statut === st) && (!d || l.date_prevue === d)).map(l => `<tr>
+      <td class="code">${esc(dateCourte(l.date_prevue))}</td><td>${esc(nomsClients[l.client_id] || "")}<div class="discret petit">${esc(l.telephone || "")}</div></td>
+      <td>${esc(l.adresse || "")}</td><td>${esc([nomPers(l.livreur_id), nomVeh(l.vehicule_id)].filter(Boolean).join(" · "))}</td>
+      <td><span class="pastille ${CLASSE_LIVRAISON[l.statut]}">${esc(l.statut)}</span>${l.motif ? `<div class="discret petit">${esc(l.motif)}</div>` : ""}</td>
+      <td class="actions-ligne">${l.bl_photo ? `<button class="btn-lien" data-voir="${esc(l.bl_photo)}">Bon de livraison</button>` : ""}
+        ${peutPlanif && !["Livrée", "Annulée"].includes(l.statut) ? `<button class="btn" data-geste="${l.id}">Mettre à jour</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="6" class="vide">Aucune livraison.</td></tr>`;
+    $$("[data-voir]").forEach(b => b.onclick = () => voirFichierSupply(b.dataset.voir));
+    $$("[data-geste]").forEach(b => b.onclick = () => formulaireGesteLivraison((livs || []).find(l => l.id === b.dataset.geste), recharger));
+  };
+  ["f-st", "f-date"].forEach(id => $("#" + id).onchange = dessiner); dessiner();
+  $$("[data-planif]").forEach(b => b.onclick = () => formulairePlanifierLivraison(aPlanifier.find(v => v.id === b.dataset.planif)));
+}
+
+function formulairePlanifierLivraison(v) {
+  ouvrirModale(`Livrer ${v.numero}`, `<p>${esc(v.client)} — ${fcfa(v.montant)} FCFA</p><div class="grille2">
+      <div><label for="pl-date">Date *</label><input type="date" id="pl-date" value="${aujourdhui()}"></div>
+      <div><label for="pl-liv">Livreur *</label><select id="pl-liv">${optPers(null, estChauffeur)}</select></div>
+      <div><label for="pl-veh">Véhicule</label><select id="pl-veh">${optVeh(null)}</select></div>
+      <div><label for="pl-tel">Téléphone du client</label><input type="tel" id="pl-tel"></div></div>
+    <label for="pl-adr">Adresse de livraison</label><input type="text" id="pl-adr" value="${esc(v.adresse_livraison || "")}" placeholder="Laissée vide : adresse de la fiche client">
+    <label for="pl-obs">Consigne</label><input type="text" id="pl-obs">`, {
+    large: true, libelleSave: "Planifier",
+    onSave: async () => {
+      if (!$("#pl-liv").value) return "Choisissez le livreur.";
+      try { await appeler("planifier_livraison", { p_vente: v.id, p_date: $("#pl-date").value || null, p_vehicule: $("#pl-veh").value || null, p_livreur: $("#pl-liv").value,
+        p_adresse: $("#pl-adr").value, p_telephone: $("#pl-tel").value, p_observation: $("#pl-obs").value || null }); } catch (err) { return messageErreur(err); }
+      toast("Livraison planifiée : elle apparaît dans la tournée du livreur."); recharger();
+    }
+  });
+}
+
+/* Livrée (photo du BL), échouée ou reportée : par le livreur ou la supply chain. */
+function formulaireGesteLivraison(l, retour) {
+  ouvrirModale("Livraison", `<label for="gl-st">Résultat *</label><select id="gl-st"><option>Livrée</option><option>Échouée</option><option>Reportée</option><option>En cours</option></select>
+    <div id="gl-photo-bloc">${champPhoto("gl-photo", "Photo du bon de livraison signé par le client", true)}</div>
+    <div id="gl-motif-bloc" hidden><label for="gl-motif">Motif *</label><input type="text" id="gl-motif" placeholder="Client absent, adresse introuvable…"></div>`, {
+    libelleSave: "Enregistrer",
+    onSave: async () => {
+      const st = $("#gl-st").value; let photo = null;
+      try {
+        if (st === "Livrée") { if (!fichierDe("gl-photo") && !l.bl_photo) return "Prenez la photo du bon de livraison signé."; photo = await deposerSupply("livraisons/" + l.id, fichierDe("gl-photo")); }
+        await appeler("livreur_statut_livraison", { p_id: l.id, p_statut: st, p_photo: photo, p_motif: $("#gl-motif").value || null });
+      } catch (err) { return messageErreur(err); }
+      toast(st === "Livrée" ? "Livraison enregistrée." : "Livraison mise à jour."); retour();
+    }
+  });
+  const maj = () => { const st = $("#gl-st").value; $("#gl-photo-bloc").hidden = st !== "Livrée"; $("#gl-motif-bloc").hidden = !["Échouée", "Reportée"].includes(st); };
+  $("#gl-st").onchange = maj; maj();
+}
+
+async function ongletEnlevements() {
+  const [aFaire, { data: enls, error }] = await Promise.all([peut(PARC_SAISIE) ? appeler("achats_a_enlever") : Promise.resolve([]),
+    sb.from("enlevements").select("*, enlevement_lignes(*)").order("date_prevue", { ascending: false }).limit(200)]);
+  if (error) throw error;
+  $("#log-corps").innerHTML = `${aFaire.length ? `<h2 style="margin-top:0">Achats validés à aller chercher (${aFaire.length})</h2>
+      <div class="defil"><table><thead><tr><th>Achat</th><th>Date</th><th>Fournisseur</th><th class="montant">Articles</th><th class="montant">Montant</th><th></th></tr></thead><tbody>
+      ${aFaire.map(a => `<tr><td class="code">${esc(a.numero || "")}</td><td class="code">${esc(dateCourte(a.date_achat))}</td><td>${esc(a.fournisseur || "")}<div class="discret petit">${esc(a.telephone || "")}</div></td>
+        <td class="montant">${a.articles}</td><td class="montant">${fcfa(a.montant)}</td><td><button class="btn" data-plan-enl="${a.achat_id}">Planifier</button></td></tr>`).join("")}</tbody></table></div>` : ""}
+    <h2>Enlèvements</h2>
+    <div class="defil"><table><thead><tr><th>Prévu le</th><th>Articles</th><th>Chauffeur · véhicule</th><th>Statut</th><th></th></tr></thead><tbody>
+    ${(enls || []).map(e => `<tr><td class="code">${esc(dateCourte(e.date_prevue))}</td>
+      <td>${(e.enlevement_lignes || []).map(l => `${esc(l.designation)} × ${qte(l.quantite_attendue)}${l.quantite_recue != null && Number(l.quantite_recue) !== Number(l.quantite_attendue) ? ` <b class="negatif">(reçu ${qte(l.quantite_recue)}${l.motif_ecart ? " : " + esc(l.motif_ecart) : ""})</b>` : ""}`).join("<br>")}</td>
+      <td>${esc([nomPers(e.chauffeur_id), nomVeh(e.vehicule_id)].filter(Boolean).join(" · "))}</td>
+      <td><span class="pastille ${e.statut === "Effectué" ? (e.ecart ? "alerte" : "ok") : e.statut === "Annulé" ? "inactif" : "attente"}">${esc(e.statut)}${e.ecart ? " avec écart" : ""}</span></td>
+      <td>${e.statut === "Prévu" && peut(PARC_SAISIE) ? `<button class="btn" data-recep="${e.id}">Réception</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="5" class="vide">Aucun enlèvement.</td></tr>`}</tbody></table></div>`;
+  $$("[data-plan-enl]").forEach(b => b.onclick = () => {
+    const a = aFaire.find(x => x.achat_id === b.dataset.planEnl);
+    ouvrirModale(`Enlèvement — ${a.numero || ""}`, `<p>${esc(a.fournisseur || "")} · ${a.articles} article(s)</p><div class="grille2">
+        <div><label for="pe-date">Date *</label><input type="date" id="pe-date" value="${aujourdhui()}"></div>
+        <div><label for="pe-ch">Chauffeur *</label><select id="pe-ch">${optPers(null, estChauffeur)}</select></div>
+        <div><label for="pe-veh">Véhicule</label><select id="pe-veh">${optVeh(null)}</select></div></div>
+      <label for="pe-obs">Consigne</label><input type="text" id="pe-obs">`, {
+      libelleSave: "Planifier",
+      onSave: async () => {
+        if (!$("#pe-ch").value) return "Choisissez le chauffeur.";
+        try { await appeler("planifier_enlevement", { p_achat: a.achat_id, p_date: $("#pe-date").value || null, p_vehicule: $("#pe-veh").value || null,
+          p_chauffeur: $("#pe-ch").value, p_observation: $("#pe-obs").value || null }); } catch (err) { return messageErreur(err); }
+        toast("Enlèvement planifié."); recharger();
+      }
+    });
+  });
+  $$("[data-recep]").forEach(b => b.onclick = () => formulaireReception((enls || []).find(e => e.id === b.dataset.recep), recharger));
+}
+
+/* Réception chez le fournisseur : quantité récupérée par article ; tout écart s'explique. */
+function formulaireReception(e, retour) {
+  const lignes = e.enlevement_lignes || e.lignes || [];
+  ouvrirModale("Réception chez le fournisseur", `<p class="discret petit">Comptez ce qui est chargé. Un écart (manquant, casse) est signalé au manager et au DAF.</p>
+    ${lignes.map(l => `<div class="ligne-recep"><div><b>${esc(l.designation)}</b><div class="discret petit">Commandé : ${qte(l.quantite_attendue)}</div></div>
+      <input type="number" min="0" inputmode="decimal" data-recue="${l.id}" value="${esc(l.quantite_attendue)}" aria-label="Quantité récupérée" style="width:6rem">
+      <input type="text" data-motif="${l.id}" placeholder="Motif de l'écart" aria-label="Motif de l'écart" hidden></div>`).join("")}
+    <label for="rc-obs">Observation</label><input type="text" id="rc-obs">`, {
+    libelleSave: "Valider la réception",
+    onSave: async () => {
+      const ls = lignes.map(l => ({ id: l.id, quantite_recue: $(`[data-recue="${l.id}"]`).value === "" ? null : Number($(`[data-recue="${l.id}"]`).value), motif_ecart: $(`[data-motif="${l.id}"]`).value }));
+      try { await appeler("enregistrer_enlevement", { p_id: e.id, p_lignes: ls, p_observation: $("#rc-obs").value || null }); } catch (err) { return messageErreur(err); }
+      toast("Réception enregistrée."); retour();
+    }
+  });
+  lignes.forEach(l => { const i = $(`[data-recue="${l.id}"]`); i.oninput = () => { $(`[data-motif="${l.id}"]`).hidden = Number(i.value) === Number(l.quantite_attendue); }; });
+}
+
+/* ---------------------------------------------------------------------
+   Ma tournée (livreur, sur téléphone)
+   --------------------------------------------------------------------- */
+async function pageMaTournee() {
+  const t = await appeler("ma_tournee", { p_date: aujourdhui() });
+  if (!etat.parc) { try { await chargerRefsParc(); } catch (e) { etat.parc = { vehicules: [], profils: [] }; } }
+  const livs = t.livraisons || [], enls = t.enlevements || [];
+  const aFaire = livs.filter(l => ["À livrer", "En cours"].includes(l.statut)), faites = livs.filter(l => !["À livrer", "En cours"].includes(l.statut));
+  const carteLiv = l => `<article class="carte-tournee">
+      <div class="carte-veh-tete"><b>${esc(l.client || "Client")}</b><span class="pastille ${CLASSE_LIVRAISON[l.statut]}">${esc(l.statut)}</span></div>
+      ${l.adresse ? `<div>${esc(l.adresse)} · <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.adresse)}" target="_blank" rel="noopener">Itinéraire</a></div>` : ""}
+      ${l.telephone ? `<div><a class="btn" href="tel:${esc(l.telephone)}">Appeler ${esc(l.telephone)}</a></div>` : ""}
+      <div class="discret petit">${esc(l.facture || "")}${l.date_prevue < aujourdhui() ? ` · prévue le ${esc(dateCourte(l.date_prevue))}` : ""}</div>
+      <ul class="articles">${(l.articles || []).map(a => `<li>${esc(a.designation)} × ${qte(a.quantite)}</li>`).join("")}</ul>
+      ${["À livrer", "En cours"].includes(l.statut) ? `<label class="btn btn-principal gros-btn">Livrée — photographier le BL signé
+          <input type="file" accept="image/*" capture="environment" data-bl="${l.id}" hidden></label>
+        <div class="deux-btn"><button class="btn gros-btn" data-echec="${l.id}">Échec</button><button class="btn gros-btn" data-report="${l.id}">Reporter</button></div>` : l.motif ? `<div class="discret">${esc(l.motif)}</div>` : ""}
+    </article>`;
+  const carteEnl = e => `<article class="carte-tournee">
+      <div class="carte-veh-tete"><b>${esc(e.fournisseur || "Fournisseur")}</b><span class="pastille ${e.statut === "Effectué" ? "ok" : "attente"}">Enlèvement · ${esc(e.statut)}</span></div>
+      ${e.adresse ? `<div>${esc(e.adresse)}</div>` : ""}${e.telephone ? `<div><a class="btn" href="tel:${esc(e.telephone)}">Appeler ${esc(e.telephone)}</a></div>` : ""}
+      <ul class="articles">${(e.lignes || []).map(x => `<li>${esc(x.designation)} × ${qte(x.quantite_attendue)}${x.quantite_recue != null ? ` · reçu ${qte(x.quantite_recue)}` : ""}</li>`).join("")}</ul>
+      ${e.statut === "Prévu" ? `<button class="btn btn-principal gros-btn" data-recevoir="${e.id}">Marchandise chargée : compter</button>` : ""}</article>`;
+  $("#contenu").innerHTML = `<div class="tournee">
+    <div class="entete-page"><div><h1>Ma tournée</h1><p class="discret">${esc(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }))}
+      · ${aFaire.length} livraison(s) à faire${enls.filter(e => e.statut === "Prévu").length ? ` · ${enls.filter(e => e.statut === "Prévu").length} enlèvement(s)` : ""}</p></div></div>
+    ${aFaire.length || enls.length ? "" : `<p class="vide">Rien de prévu pour vous aujourd'hui.</p>`}
+    ${enls.filter(e => e.statut === "Prévu").map(carteEnl).join("")}
+    ${aFaire.map(carteLiv).join("")}
+    <button class="btn gros-btn" id="b-panne">Signaler une panne ou un incident</button>
+    ${faites.length || enls.some(e => e.statut === "Effectué") ? `<h2>Fait aujourd'hui</h2>${faites.map(carteLiv).join("")}${enls.filter(e => e.statut === "Effectué").map(carteEnl).join("")}` : ""}</div>`;
+  $$("[data-bl]").forEach(i => i.onchange = async () => {
+    const f = i.files && i.files[0]; if (!f) return;
+    const lab = i.closest("label"); lab.classList.add("envoi"); lab.firstChild.textContent = "Envoi de la photo…";
+    try {
+      const chemin = await deposerSupply("livraisons/" + i.dataset.bl, f);
+      await appeler("livreur_statut_livraison", { p_id: i.dataset.bl, p_statut: "Livrée", p_photo: chemin, p_motif: null });
+      toast("Livraison enregistrée."); aller("ma_tournee");
+    } catch (err) { lab.classList.remove("envoi"); lab.firstChild.textContent = "Livrée — photographier le BL signé"; toast(messageErreur(err), true); }
+  });
+  const motif = (id, statut) => ouvrirModale(statut === "Échouée" ? "Livraison échouée" : "Reporter la livraison",
+    `<label for="mt-motif">Motif *</label><input type="text" id="mt-motif" placeholder="Client absent, injoignable, adresse introuvable…">`, {
+    libelleSave: "Enregistrer",
+    onSave: async () => {
+      const m = $("#mt-motif").value.trim(); if (!m) return "Indiquez le motif.";
+      try { await appeler("livreur_statut_livraison", { p_id: id, p_statut: statut, p_photo: null, p_motif: m }); } catch (err) { return messageErreur(err); }
+      toast("Livraison mise à jour."); aller("ma_tournee");
+    }
+  });
+  $$("[data-echec]").forEach(b => b.onclick = () => motif(b.dataset.echec, "Échouée"));
+  $$("[data-report]").forEach(b => b.onclick = () => motif(b.dataset.report, "Reportée"));
+  $$("[data-recevoir]").forEach(b => b.onclick = () => formulaireReception(enls.find(e => e.id === b.dataset.recevoir), () => aller("ma_tournee")));
+  $("#b-panne").onclick = () => formulaireIncident(() => aller("ma_tournee"));
+}
+
+/* Points de l'accueil pour la supply chain, le manager et le livreur. */
+async function aFaireSupply(pts) {
+  const compter = async q => { const { count } = await q; return count || 0; };
+  try {
+    if (peut(PARC_LECTEURS)) {
+      const { data: ech } = await sb.from("v_echeances_parc").select("etat");
+      const exp = (ech || []).filter(e => ["Expiré", "Manquant"].includes(e.etat)).length, s7 = (ech || []).filter(e => e.etat === "Sous 7 jours").length,
+        s30 = (ech || []).filter(e => e.etat === "Sous 30 jours").length;
+      if (exp) pts.push({ texte: `<b>${exp} papier(s) de véhicule expiré(s) ou manquant(s)</b> : assurance, visite technique, vignette, carte grise…`, page: "parc", param: { onglet: "echeances" }, bouton: "Voir" });
+      if (s7 + s30) pts.push({ texte: `<b>${s7 + s30} document(s) du parc expirent bientôt</b>${s7 ? ` (dont ${s7} sous 7 jours)` : ""}.`, page: "parc", param: { onglet: "echeances" }, bouton: "Renouveler" });
+      const p = moisPrecedent();
+      const [{ data: rel }, { data: veh }] = await Promise.all([sb.from("releves_km").select("vehicule_id, statut").eq("annee", p.annee).eq("mois", p.mois),
+        sb.from("vehicules").select("id").eq("actif", true).neq("statut", "Hors service")]);
+      const manquants = (veh || []).filter(v => !(rel || []).some(r => r.vehicule_id === v.id && r.statut !== "Refusé")).length;
+      if (manquants && peut(PARC_SAISIE)) pts.push({ texte: `<b>Relevé kilométrique de ${MOIS[p.mois - 1].toLowerCase()} ${p.annee}</b> : ${manquants} véhicule(s) à relever.`, page: "parc", param: { onglet: "releves", periode: p }, bouton: "Relever" });
+      if (peut(PARC_VALIDE)) {
+        const nr = (rel || []).filter(r => r.statut === "Saisi").length, ne = await compter(sb.from("entretiens_vehicule").select("id", { count: "exact", head: true }).eq("statut", "Saisi"));
+        if (nr) pts.push({ texte: `<b>${nr} relevé(s) kilométrique(s)</b> de l'adjoint attendent votre validation.`, page: "parc", param: { onglet: "releves", periode: p }, bouton: "Valider" });
+        if (ne) pts.push({ texte: `<b>${ne} entretien(s) ou réparation(s)</b> attendent votre validation.`, page: "parc", param: { onglet: "entretiens" }, bouton: "Valider" });
+      }
+      const ni = await compter(sb.from("incidents_vehicule").select("id", { count: "exact", head: true }).eq("statut", "Ouvert"));
+      if (ni) pts.push({ texte: `<b>${ni} incident(s) de véhicule</b> signalé(s), sans suite pour l'instant.`, page: "parc", param: { onglet: "incidents" }, bouton: "Traiter" });
+    }
+    if (peut(PARC_SAISIE)) {
+      const a = await appeler("achats_a_enlever");
+      if (a.length) pts.push({ texte: `<b>${a.length} achat(s) validé(s)</b> sont à aller chercher chez les fournisseurs.`, page: "logistique", param: { onglet: "enlevements" }, bouton: "Planifier" });
+    }
+    if (peut([...PARC_LECTEURS, "manager"])) {
+      const n = await compter(sb.from("enlevements").select("id", { count: "exact", head: true }).eq("ecart", true).gte("effectue_le", new Date(Date.now() - 30 * 864e5).toISOString()));
+      if (n) pts.push({ texte: `<b>${n} enlèvement(s) avec écart</b> ces 30 derniers jours : quantités récupérées inférieures ou supérieures à l'achat.`, page: "logistique", param: { onglet: "enlevements" }, bouton: "Voir" });
+    }
+    if (peut(["livreur"])) {
+      const t = await appeler("ma_tournee", { p_date: aujourdhui() });
+      const n = (t.livraisons || []).filter(l => ["À livrer", "En cours"].includes(l.statut)).length + (t.enlevements || []).filter(e => e.statut === "Prévu").length;
+      if (n) pts.push({ texte: `<b>${n} course(s) dans votre tournée</b> aujourd'hui.`, page: "ma_tournee", bouton: "Ouvrir" });
+    }
+  } catch (e) { /* sans accès */ }
+}
 
 /* =====================================================================
    Lot 8 — Espace salarié, espace responsable, demandes et évaluations.
