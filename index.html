@@ -68,7 +68,9 @@ input:disabled,select:disabled,textarea:disabled{background:var(--papier);color:
 .info{background:var(--ambre-clair);color:var(--ambre);padding:.6rem .8rem;border-radius:var(--rayon);margin:1rem 0;font-size:.9rem}
 
 /* ---------- Coque ---------- */
-.coque{display:grid;grid-template-columns:252px minmax(0,1fr);height:100%}
+/* La coque tient dans l'écran : seul le contenu défile, le volet reste en place (et défile seul s'il est long). */
+.coque{display:grid;grid-template-columns:252px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh}
+.coque>.barre,.coque>.principal{min-height:0}
 .ic{flex:none;display:block}
 .barre{background:var(--barre);color:var(--barre-texte);display:flex;flex-direction:column;overflow:hidden}
 .barre-tete{padding:1.1rem 1.1rem .9rem;border-bottom:1px solid rgba(255,255,255,.08)}
@@ -276,7 +278,7 @@ svg.courbe{display:block} svg.courbe polyline{stroke-width:1.6} svg.courbe .pos{
 svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
 @media print{
   .barre,.barre-haut,.actions-ligne,#toast,.outils{display:none!important}
-  .coque,.principal{display:block}.contenu{overflow:visible;padding:0}.panneau,.carte-form{border:none}
+  .coque,.principal{display:block;height:auto}.contenu{overflow:visible;padding:0}.panneau,.carte-form{border:none}
 }
 </style>
 </head>
@@ -307,7 +309,8 @@ const ROLES = {
   admin: "Administrateur",
   daf: "Directeur administratif et financier",
   comptable: "Comptable",
-  tresorier: "Trésorier / caissier",
+  tresorier: "Trésorier (toute la trésorerie)",
+  caissier: "Caissier (ses caisses seulement)",
   manager: "Manager de catégorie",
   rh: "Ressources humaines",
   auditeur: "Auditeur",
@@ -318,7 +321,8 @@ const ROLES_DESCRIPTION = {
   admin: "Tout, y compris la gestion des utilisateurs et des administrateurs.",
   daf: "Valide les achats, administre les référentiels et les utilisateurs, consulte tout.",
   comptable: "Enregistre les ventes et les encaissements, tient les fournisseurs et les produits.",
-  tresorier: "Paie les achats validés, tient les caisses, les banques et le Mobile Money.",
+  tresorier: "Paie les achats validés, tient les caisses, les banques et le Mobile Money : voit toute la trésorerie.",
+  caissier: "Tient seulement les caisses dont il est désigné responsable (Comptes de trésorerie › Responsable) : y saisit les dépenses et recettes, confirme les approvisionnements reçus. Ne voit ni les autres comptes, ni la comptabilité.",
   manager: "Saisit les achats de ses catégories de produits. Ne valide ni ne paie.",
   rh: "Tient les dossiers du personnel et prépare la paie. Ne paie pas.",
   auditeur: "Consulte tout, y compris le journal des modifications. Ne modifie rien.",
@@ -375,7 +379,7 @@ const LISTES = {
   clients: { select: "id, code, nom, type, canal, telephone, adresse, ville, delai_paiement, actif", ordre: "nom", lib: r => `${r.nom} (${r.code})` },
   salaries_liste: { table: "salaries", select: "id, matricule, nom, prenom, actif", ordre: "matricule", lib: r => `${r.matricule} – ${[r.nom, r.prenom].filter(Boolean).join(" ")}` },
   managers: { table: "profils", select: "id, nom, prenom, email, role, actif", ordre: "nom", filtre: q => q.eq("role", "manager"), lib: r => nomComplet(r) },
-  caissiers: { table: "profils", select: "id, nom, prenom, email, role, actif", ordre: "nom", filtre: q => q.in("role", ["tresorier", "daf", "admin"]), lib: r => nomComplet(r) }
+  caissiers: { table: "profils", select: "id, nom, prenom, email, role, actif", ordre: "nom", filtre: q => q.in("role", ["tresorier", "caissier", "daf", "admin"]), lib: r => nomComplet(r) }
 };
 
 /* Chaque référentiel : ses champs, qui peut le modifier (les mêmes règles que la base). */
@@ -630,7 +634,7 @@ const NAV = [
   { id: "budget", l: "Budget", roles: FINANCE },
   { groupe: "Finances", roles: LECTEURS_ACHATS },
   { id: "achats", l: "Achats", roles: LECTEURS_ACHATS },
-  { id: "tresorerie", l: "Trésorerie", roles: FINANCE },
+  { id: "tresorerie", l: "Trésorerie", roles: [...FINANCE, "caissier"] },
   { id: "situation_tresorerie", l: "Situation de trésorerie", roles: FINANCE },
   { id: "dettes", l: "Dettes fournisseurs", roles: FINANCE },
   { id: "consultation", l: "Consultation par période", roles: FINANCE },
@@ -1087,7 +1091,7 @@ async function pageAccueil() {
   const [comptes, faire, points, soldes] = await Promise.all([
     Promise.all(cibles.map(([t]) => sb.from(t).select("id", { count: "exact", head: true }).eq("actif", true))),
     aFaireFinances(), pointsACompleter(),
-    peut(FINANCE) ? sb.from("v_soldes_tresorerie").select("id, code, type, libelle, solde").eq("actif", true).order("code").then(r => r.data || []) : []]);
+    peut([...FINANCE, "caissier"]) ? sb.from("v_soldes_tresorerie").select("id, code, type, libelle, solde").eq("actif", true).order("code").then(r => r.data || []) : []]);
   let enAttente = 0;
   if (peut(GESTION)) ({ count: enAttente } = await sb.from("profils").select("id", { count: "exact", head: true }).eq("actif", false));
 
@@ -1119,7 +1123,7 @@ async function pageAccueil() {
     <div class="kpis">${cibles.map(([t, l, i, c], k) => `<a class="kpi" href="#/${t}" data-aller="${t}"><span class="pastille-ic ${c}">${ic(i, 20)}</span>
       <span class="kpi-txt"><b>${comptes[k].count ?? "—"}</b><span>${esc(l)}</span></span></a>`).join("")}</div>
     <div class="deux-col">
-      ${peut(FINANCE) ? `<section class="carte"><div class="carte-tete"><h2>Trésorerie</h2><span class="total-carte"><small>Solde total</small>
+      ${peut([...FINANCE, "caissier"]) ? `<section class="carte"><div class="carte-tete"><h2>Trésorerie</h2><span class="total-carte"><small>Solde total</small>
           <b class="num ${totalTreso < 0 ? "negatif" : ""}">${fcfa(totalTreso)} FCFA</b></span></div>
         <ul class="liste-carte">${soldes.slice(0, 6).map(s => `<li><a href="#/tresorerie" data-aller="tresorerie" data-param='${esc(JSON.stringify({ compte: s.id }))}'>
           <span class="pastille-ic petit ${/caisse/i.test(s.type || "") ? "orange" : /mobile/i.test(s.type || "") ? "violet" : "bleu"}">${ic(iconeCompte(s.type), 16)}</span>
@@ -1890,6 +1894,12 @@ async function aFaireFinances() {
       } catch (e) { /* sans accès */ }
     }
   }
+  if (peut(["caissier"])) {
+    try {
+      const ap = await appeler("approvisionnements_attendus");
+      if (ap.length) pts.push({ texte: `<b>${ap.length} approvisionnement(s) de votre caisse</b> à confirmer (${fcfa(ap.reduce((t, a) => t + Number(a.montant), 0))} FCFA) : l'argent est parti, son arrivée n'est pas saisie.`, page: "tresorerie", bouton: "Confirmer" });
+    } catch (e) { /* */ }
+  }
   if (peut(FINANCE)) {
     // Un compte de trésorerie ne peut pas être à découvert ; un transfert doit arriver quelque part.
     try {
@@ -1943,15 +1953,20 @@ async function pageTresorerie() {
   const { data: soldes, error } = await sb.from("v_soldes_tresorerie").select("*").eq("actif", true).order("code");
   if (error) throw error;
   etat.soldes = soldes || [];
+  // Le caissier ne voit que ses caisses (la base ne lui rend qu'elles).
+  const caissierSeul = peut(["caissier"]) && !peut(FINANCE);
   const boutons = [
-    peut(PAIEMENT) ? `<button class="btn btn-principal" data-nouvelle="Dépense">Dépense</button>` : "",
-    peut(RECETTE) ? `<button class="btn" data-nouvelle="Recette">Recette</button>` : "",
+    peut([...PAIEMENT, "caissier"]) ? `<button class="btn btn-principal" data-nouvelle="Dépense">Dépense</button>` : "",
+    peut([...RECETTE, "caissier"]) ? `<button class="btn" data-nouvelle="Recette">Recette</button>` : "",
     peut(PAIEMENT) ? `<button class="btn" data-nouvelle="Virement">Virement</button>` : "",
     peut(EXPLOITANT) ? `<button class="btn" data-nouvelle="Exploitant">Payé par l'exploitant</button>` : ""].join("");
   $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Trésorerie</h1>
       <p class="discret">Chaque entrée et chaque sortie d'argent, avec son écriture. Une opération enregistrée ne se modifie pas :
       le DAF l'annule, puis elle se saisit de nouveau. Les dépenses payées par le CEO ou par Guest Cameroun passent au compte de l'exploitant (1041).</p></div>
       <div class="actions-ligne">${boutons}</div></div>
+    ${caissierSeul ? `<p class="info">${etat.soldes.length ? `Vous tenez ${esc(etat.soldes.map(s => s.code).join(", "))} : seules leurs opérations sont affichées.`
+      : "Aucune caisse ne vous est attribuée : le DAF vous désigne responsable d'une caisse dans Comptes de trésorerie."}</p>` : ""}
+    <div id="appros"></div>
     <div class="chiffres">${etat.soldes.map(s => `<a href="#/tresorerie" data-compte="${s.id}"><b class="${Number(s.solde) < 0 ? "negatif" : ""}">${fcfa(s.solde)}</b>
       <span>${esc(s.libelle)}</span></a>`).join("")}</div>
     ${etat.soldes.some(s => Number(s.solde) < 0) ? `<p class="info">Un compte ne peut pas être à découvert : un solde négatif signifie qu'une entrée manque
@@ -1973,6 +1988,7 @@ async function pageTresorerie() {
       <tbody id="corps"></tbody><tfoot id="pied"></tfoot></table></div></div>`;
   if (param.compte) $("#f-compte").value = param.compte;
   if (param.type) $("#f-type").value = param.type;
+  if (peut(["caissier"])) afficherApprosAttendus();
   if (param.annee) { etat.filtres.annee = param.annee; etat.filtres.mois = param.mois || ""; $("#p-annee").value = param.annee; $("#p-mois").value = param.mois || ""; }
   $$("#contenu [data-aller]").forEach(b => b.onclick = () => aller(b.dataset.aller));
   if (param.aAffecter) { $("#f-type").value = "Règlement fournisseur"; $("#f-revoir").checked = true; }
@@ -2033,6 +2049,27 @@ async function pageTresorerie() {
     }), `Trésorerie — ${libPeriode()}`);
   };
   await charger();
+}
+
+/* Caissier : les approvisionnements partis du compte parent de sa caisse, à confirmer à leur arrivée. */
+async function afficherApprosAttendus() {
+  let ap;
+  try { ap = await appeler("approvisionnements_attendus"); } catch (e) { return; }
+  if (!ap.length || !$("#appros")) return;
+  $("#appros").innerHTML = `<div class="panneau" style="margin-bottom:1.25rem"><h2 style="margin-top:0">Approvisionnements à confirmer</h2>
+    <p class="discret petit">L'argent est sorti du compte principal pour votre caisse. Confirmez-le dès qu'il est dans la caisse, à la date de réception.</p>
+    <div class="defil"><table><thead><tr><th>Parti le</th><th>De</th><th>Pour</th><th>Libellé</th><th class="montant">Montant</th><th>Reçu le</th><th></th></tr></thead><tbody>
+    ${ap.map(a => `<tr><td class="code">${esc(dateCourte(a.date_sortie))}</td><td>${esc(a.compte_sortie)}</td><td>${esc(a.compte)}</td><td>${esc(a.libelle)}</td>
+      <td class="montant">${fcfa(a.montant)}</td><td><input type="date" value="${esc(a.date_sortie)}" min="${esc(a.date_sortie)}" data-date="${esc(a.sortie_id)}" aria-label="Date de réception" style="width:auto"></td>
+      <td><button class="btn" data-recu="${esc(a.sortie_id)}" data-pour="${esc(a.compte_id)}">Confirmer la réception</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  $$("[data-recu]").forEach(b => b.onclick = async () => {
+    const d = $(`[data-date="${b.dataset.recu}"]`).value;
+    if (!d) return toast("Indiquez la date de réception.", true);
+    b.disabled = true;
+    try { await appeler("completer_transfert", { p_op: b.dataset.recu, p_compte: b.dataset.pour, p_date: d }); }
+    catch (err) { b.disabled = false; return toast(messageErreur(err), true); }
+    toast("Réception enregistrée."); recharger();
+  });
 }
 
 /* Saisie d'une dépense, d'une recette, d'un virement ou d'une dépense payée par l'exploitant. */
