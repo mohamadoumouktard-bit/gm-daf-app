@@ -774,6 +774,42 @@ const etat = {
 };
 let sb = null;
 
+/* Fin de session. Supabase renouvelle la connexion sans limite : on la borne ici.
+   Retour à l'écran de connexion après 30 minutes sans activité (4 heures pour un livreur, sur la route),
+   et en tout cas 12 heures après la connexion. L'heure de connexion et de dernière activité est
+   gardée dans le navigateur (commune à tous les onglets). */
+const SESSION = { cle: "gm-session", inactivite: 30 * 60e3, inactiviteLivreur: 4 * 3600e3, max: 12 * 3600e3 };
+const lireSession = () => { try { return JSON.parse(localStorage.getItem(SESSION.cle) || "null"); } catch (e) { return null; } };
+const ecrireSession = o => { try { localStorage.setItem(SESSION.cle, JSON.stringify(o)); } catch (e) { /* navigation privée */ } };
+const ouvrirSession = () => { const t = Date.now(); ecrireSession({ connexion: t, activite: t }); };
+function motifExpiration() {
+  const x = lireSession(), t = Date.now();
+  if (!x) return "Votre session a expiré : reconnectez-vous.";
+  const limite = etat.profil && estLivreurSeul() ? SESSION.inactiviteLivreur : SESSION.inactivite;
+  if (t - x.connexion > SESSION.max) return "Votre session a expiré (12 heures après la connexion) : reconnectez-vous.";
+  if (t - x.activite > limite) return `Votre session a expiré après ${Math.round(limite / 60e3)} minutes sans activité : reconnectez-vous.`;
+  return "";
+}
+let derniereActivite = 0;
+function noterActivite() {
+  const t = Date.now(); if (!etat.session || t - derniereActivite < 20000) return;
+  if (motifExpiration()) return; // trop tard : la vérification suivante déconnecte
+  derniereActivite = t; const x = lireSession(); if (x) ecrireSession({ ...x, activite: t });
+}
+async function expirerSession(motif) {
+  etat.messageConnexion = motif;
+  try { localStorage.removeItem(SESSION.cle); } catch (e) { /* */ }
+  const d = $("#modale"); if (d && d.open) d.close();
+  await sb.auth.signOut();
+}
+function verifierSession() { if (etat.session) { const m = motifExpiration(); if (m) expirerSession(m); } }
+function surveillerSession() {
+  ["pointerdown", "keydown", "touchstart", "wheel", "scroll"].forEach(ev => document.addEventListener(ev, noterActivite, { passive: true, capture: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) verifierSession(); });
+  window.addEventListener("focus", verifierSession);
+  setInterval(verifierSession, 60000);
+}
+
 // Rôle principal + activités cumulées (profils.roles_supplementaires) : un droit est
 // accordé dès que l'un des rôles de la personne le donne.
 const mesRoles = () => etat.profil ? [etat.profil.role, ...(etat.profil.roles_supplementaires || [])] : [];
@@ -828,9 +864,14 @@ async function demarrer() {
     if (evenement === "PASSWORD_RECOVERY") etat.doitDefinirMdp = true;
     if (evenement === "SIGNED_OUT") setTimeout(ecranConnexion, 0);
   });
+  surveillerSession();
   const { data } = await sb.auth.getSession();
-  if (data.session) await entrer(data.session);
-  else ecranConnexion();
+  if (data.session) {
+    if (hashInitial.get("access_token")) ouvrirSession();
+    const m = motifExpiration();
+    if (m) return expirerSession(m);
+    await entrer(data.session);
+  } else ecranConnexion();
 }
 
 async function entrer(session) {
@@ -871,6 +912,7 @@ function ecranConnexion() {
       <p style="margin-top:1.25rem"><button class="btn btn-principal" type="submit">Se connecter</button></p>
       <p><button class="btn-lien" type="button" id="c-oubli">Mot de passe oublié</button></p>
     </form>`);
+  if (etat.messageConnexion) { $("#c-err").innerHTML = `<div class="info">${esc(etat.messageConnexion)}</div>`; etat.messageConnexion = ""; }
   if (etat.erreurLien) {
     $("#c-err").innerHTML = `<div class="erreur">${esc(etat.erreurLien)}</div>`;
     etat.erreurLien = "";
@@ -882,6 +924,7 @@ function ecranConnexion() {
     const { data, error } = await sb.auth.signInWithPassword({ email: $("#c-email").value.trim(), password: $("#c-mdp").value });
     btn.disabled = false;
     if (error) return ($("#c-err").innerHTML = `<div class="erreur">${esc(messageErreur(error))}</div>`);
+    ouvrirSession();
     await entrer(data.session);
   };
   $("#c-oubli").onclick = async () => {
@@ -927,7 +970,7 @@ function ecranEnAttente() {
     <p>Votre compte <b>${esc(etat.session?.user?.email)}</b> existe, mais il n'a pas encore été activé.</p>
     <p class="discret">Le DAF doit vous attribuer un rôle et activer votre accès.</p>
     <p style="margin-top:1.25rem"><button class="btn" id="b-sortir">Se déconnecter</button></p>`);
-  $("#b-sortir").onclick = () => sb.auth.signOut();
+  $("#b-sortir").onclick = () => { try { localStorage.removeItem(SESSION.cle); } catch (e) { /* */ } sb.auth.signOut(); };
 }
 
 /* =====================================================================
@@ -1027,7 +1070,7 @@ function rendreCoque() {
       </header>
       <main class="contenu" id="contenu"></main>
     </div></div>`;
-  $("#b-deco").onclick = () => sb.auth.signOut();
+  $("#b-deco").onclick = () => { try { localStorage.removeItem(SESSION.cle); } catch (e) { /* */ } sb.auth.signOut(); };
   // Menu sur petit écran : s'ouvre par le bouton ☰, se ferme par ✕, un clic à côté ou la touche Échap.
   const menu = ouvert => { $("#barre").classList.toggle("ouverte", ouvert); $("#voile-menu").hidden = !ouvert;
     $("#b-menu").setAttribute("aria-expanded", String(ouvert)); if (ouvert) $("#b-fermer-menu").focus(); };
