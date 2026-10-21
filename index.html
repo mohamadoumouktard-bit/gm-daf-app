@@ -310,9 +310,12 @@ svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
    ===================================================================== */
 const CONFIG = window.GM_CONFIG || {
   SUPABASE_URL: "https://qqfwwnllllhybxuaqiiq.supabase.co",
+  // Adresse publique : les liens d'invitation et de mot de passe y renvoient toujours (jamais vers localhost).
+  URL_APPLICATION: "https://gm-daf-app.vercel.app/",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxZnd3bmxsbGxoeWJ4dWFxaWlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NDg0NzIsImV4cCI6MjEwNjMyNDQ3Mn0.iK6xaY7p__lwPT98mFAlXYVjKDgP601_A91iFyu4f20"
 };
 const LOGO = window.LOGO_GM || "";
+const adresseRetour = () => CONFIG.URL_APPLICATION || location.origin + location.pathname;
 
 /* =====================================================================
    Rôles
@@ -930,7 +933,7 @@ function ecranConnexion() {
   $("#c-oubli").onclick = async () => {
     const email = $("#c-email").value.trim();
     if (!email) return ($("#c-err").innerHTML = `<div class="erreur">Saisissez d'abord votre e-mail.</div>`);
-    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: adresseRetour() });
     $("#c-err").innerHTML = error ? `<div class="erreur">${esc(messageErreur(error))}</div>`
       : `<div class="info">Si ce compte existe, un lien de réinitialisation vient d'être envoyé.</div>`;
   };
@@ -1498,7 +1501,7 @@ async function appelerGestionUtilisateurs(corps) {
     throw new Error("Ouvrez l'application depuis son adresse web (http:// ou https://) pour ajouter un utilisateur : le lien d'accès doit pouvoir y revenir.");
   }
   const { data, error } = await sb.functions.invoke("gerer-utilisateur",
-    { body: { ...corps, retour: location.origin + location.pathname } });
+    { body: { ...corps, retour: adresseRetour() } });
   if (error) {
     let message = error.message;
     try { const j = await error.context.json(); if (j && j.erreur) message = j.erreur; } catch (e) { /* réponse non lisible */ }
