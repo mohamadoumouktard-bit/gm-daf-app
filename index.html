@@ -2996,8 +2996,8 @@ async function pageDettes() {
       <p class="discret">Ce que l'entreprise doit à chaque fournisseur, d'après le compte 401 : factures validées moins règlements.</p></div>
       <div class="actions-ligne"><button class="btn" id="b-export">Exporter</button></div></div>
     ${aAffecter ? `<div class="info"><b>${fcfa(Math.abs(aAffecter.solde))} FCFA de règlements de marchandises</b> repris du classeur ne disent pas quel fournisseur ils ont payé.
-      Tant qu'ils ne sont pas affectés, les dettes ci-dessous sont surestimées d'autant.
-      <button class="btn-lien" data-aller="tresorerie" data-param='${esc(JSON.stringify({ aAffecter: true }))}'>Affecter les règlements</button></div>` : ""}
+      Tant qu'ils ne sont pas affectés, les dettes ci-dessous sont surestimées d'autant.${peut(CORRECTION) ? " Affectez-les ci-dessous : une suggestion est proposée pour la plupart." : ""}</div>
+      ${peut(CORRECTION) ? `<div id="bloc-affectation"><p class="vide">Recherche des achats correspondants…</p></div>` : ""}` : ""}
     <div class="panneau defil"><table><thead><tr><th>Code</th><th>Fournisseur</th><th class="montant">Facturé</th><th class="montant">Réglé</th><th class="montant">Solde dû</th><th></th></tr></thead>
     <tbody>${dettes.map(s => `<tr><td class="code">${esc(s.code)}</td><td>${esc(s.fournisseur)}</td><td class="montant">${fcfa(s.facture)}</td>
       <td class="montant">${fcfa(s.regle)}</td><td class="montant ${Number(s.solde) < 0 ? "negatif" : ""}">${fcfa(s.solde)}</td>
@@ -3012,8 +3012,77 @@ async function pageDettes() {
       || `<tr><td colspan="7" class="vide">Aucun achat à payer.</td></tr>`}</tbody></table></div>`;
   brancherAller();
   $$("[data-achat]").forEach(b => b.onclick = () => ouvrirAchat(aPayer.find(a => a.id === b.dataset.achat), recharger));
+  if ($("#bloc-affectation")) blocAffectation().catch(err => { $("#bloc-affectation").innerHTML = `<div class="erreur">${esc(messageErreur(err))}</div>`; });
   $("#b-export").onclick = () => exporterTableau("dettes_fournisseurs.xlsx", ["Code", "Fournisseur", "Facturé", "Réglé", "Solde dû"],
     lignes.map(s => [s.code || "", s.fournisseur, s.facture, s.regle, s.solde]), "Dettes fournisseurs");
+}
+
+/* Paiements sans fournisseur : suggestion (achat du même montant, achats du jour, nom dans le libellé),
+   acceptée d'un clic, choisie à la main, ou répartie entre plusieurs fournisseurs. Rien n'est affecté sans le DAF. */
+async function blocAffectation() {
+  const [ops, sug] = await Promise.all([
+    chargerTout(() => sb.from("v_operations").select("*").eq("type", "Règlement fournisseur").is("fournisseur_id", null).eq("annulee", false).order("date_operation")),
+    appeler("suggestions_affectation")]);
+  const liste = ops.filter(o => !o.ventilation);
+  const sugg = Object.fromEntries((sug || []).map(x => [x.operation_id, x]));
+  $("#bloc-affectation").innerHTML = `<h2 class="titre-section">Paiements à affecter (${liste.length})</h2>
+    <div class="panneau"><div class="outils"><select id="af-filtre" aria-label="Filtre"><option value="">Tous</option><option value="oui">Avec une suggestion</option><option value="non">Sans suggestion</option></select>
+      <span class="discret petit">« Accepter » renseigne le fournisseur (et l'achat) sur le paiement : aucun montant ne change, la dette du fournisseur diminue d'autant.</span></div>
+    <div class="defil"><table><thead><tr><th>Date</th><th>Payé par</th><th>Libellé</th><th class="montant">Montant</th><th>Suggestion</th><th></th></tr></thead><tbody id="af-corps"></tbody>
+      <tfoot><tr><td colspan="3">Total</td><td class="montant" id="af-total"></td><td colspan="2"></td></tr></tfoot></table></div></div>`;
+  const dessiner = () => {
+    const f = $("#af-filtre").value;
+    const vis = liste.filter(o => { const x = sugg[o.id] || {}; const a = !!(x.fournisseur_id || x.parts); return !f || (f === "oui") === a; });
+    $("#af-total").textContent = fcfa(vis.reduce((t, o) => t + Number(o.montant), 0));
+    $("#af-corps").innerHTML = vis.map(o => { const x = sugg[o.id] || {};
+      const prop = x.fournisseur_id ? `<b>${esc(x.fournisseur)}</b>${x.achat_numero ? ` · ${esc(x.achat_numero)} du ${esc(dateCourte(x.date_achat))}` : x.date_achat ? ` · achats du ${esc(dateCourte(x.date_achat))}` : ""}<div class="discret petit">${esc(x.regle)}</div>`
+        : x.parts ? `${x.parts.map(p => `${esc(p.fournisseur)} ${fcfa(p.montant)}`).join(" + ")}<div class="discret petit">${esc(x.regle)} (${esc(dateCourte(x.date_achat))})</div>` : `<span class="discret">—</span>`;
+      return `<tr><td class="code">${esc(dateCourte(o.date_operation))}</td><td>${esc(libCompteOp(o))}<div class="discret petit">${esc(o.numero)}</div></td>
+        <td>${esc(o.libelle)}</td><td class="montant">${fcfa(o.montant)}</td><td>${prop}</td>
+        <td class="actions-ligne">${x.fournisseur_id || x.parts ? `<button class="btn btn-principal" data-accepter="${o.id}">Accepter</button>` : ""}
+          <button class="btn" data-choisir="${o.id}">Choisir…</button><button class="btn" data-repartir="${o.id}">Répartir…</button></td></tr>`; }).join("")
+      || `<tr><td colspan="6" class="vide">Aucun paiement à affecter.</td></tr>`;
+    const op = id => liste.find(o => o.id === id);
+    $$("[data-accepter]").forEach(b => b.onclick = async () => {
+      const x = sugg[b.dataset.accepter]; b.disabled = true;
+      try {
+        if (x.parts) await appeler("repartir_reglement", { p_id: x.operation_id, p_parts: x.parts.map(p => ({ fournisseur_id: p.fournisseur_id, montant: p.montant })), p_motif: "Suggestion acceptée" });
+        else await appeler("affecter_reglement", { p_id: x.operation_id, p_fournisseur: x.fournisseur_id, p_achat: x.achat_id || null });
+      } catch (err) { b.disabled = false; return toast(messageErreur(err), true); }
+      toast("Paiement affecté."); recharger();
+    });
+    $$("[data-choisir]").forEach(b => b.onclick = () => formulaireAffectation(op(b.dataset.choisir), recharger));
+    $$("[data-repartir]").forEach(b => b.onclick = () => formulaireRepartition(op(b.dataset.repartir), (sugg[b.dataset.repartir] || {}).parts, recharger));
+  };
+  $("#af-filtre").onchange = dessiner; dessiner();
+}
+
+function formulaireRepartition(o, parts, retour) {
+  const ligne = p => `<tr><td><select class="rp-four" aria-label="Fournisseur">${optionsRef("fournisseurs", p.fournisseur_id || null)}</select></td>
+    <td><input type="number" class="rp-mt" min="1" step="1" value="${esc(p.montant ?? "")}" aria-label="Montant" style="width:9rem"></td>
+    <td><button type="button" class="btn-lien rp-suppr">Retirer</button></td></tr>`;
+  const init = parts && parts.length ? parts : [{}, {}];
+  ouvrirModale(`Répartir ${o.numero}`, `<p>${esc(o.libelle)} — <b>${fcfa(o.montant)} FCFA</b> du ${esc(dateCourte(o.date_operation))}</p>
+    <p class="discret petit">Pour un paiement qui a réglé plusieurs fournisseurs. Une écriture d'opérations diverses, datée du jour du paiement, porte chaque part sur son fournisseur.</p>
+    <div class="defil"><table class="saisie"><thead><tr><th>Fournisseur</th><th>Montant</th><th></th></tr></thead><tbody id="rp-corps">${init.map(ligne).join("")}</tbody></table></div>
+    <p><button type="button" class="btn" id="rp-ajout">Ajouter un fournisseur</button> <span id="rp-total" class="num"></span></p>
+    <label for="rp-motif">Observation</label><input type="text" id="rp-motif">`, {
+    large: true, libelleSave: "Répartir",
+    onSave: async () => {
+      const p = $$("#rp-corps tr").map(tr => ({ fournisseur_id: $(".rp-four", tr).value || null, montant: Number($(".rp-mt", tr).value || 0) }));
+      if (p.length < 2) return "Indiquez au moins deux fournisseurs (sinon, utilisez « Choisir… »).";
+      if (p.some(x => !x.fournisseur_id || !(x.montant > 0))) return "Chaque ligne a un fournisseur et un montant positif.";
+      const t = p.reduce((s, x) => s + x.montant, 0);
+      if (t !== Number(o.montant)) return `Le total (${fcfa(t)}) doit égaler le paiement (${fcfa(o.montant)} FCFA).`;
+      try { await appeler("repartir_reglement", { p_id: o.id, p_parts: p, p_motif: $("#rp-motif").value || null }); } catch (err) { return messageErreur(err); }
+      toast("Paiement réparti."); retour();
+    }
+  });
+  const total = () => { const t = $$(".rp-mt").reduce((s, i) => s + Number(i.value || 0), 0);
+    $("#rp-total").textContent = `Total ${fcfa(t)} sur ${fcfa(o.montant)} FCFA`; $("#rp-total").className = "num " + (t === Number(o.montant) ? "discret" : "negatif"); };
+  const brancher = () => { $$(".rp-mt").forEach(i => i.oninput = total); $$(".rp-suppr").forEach(b => b.onclick = () => { b.closest("tr").remove(); total(); }); total(); };
+  $("#rp-ajout").onclick = () => { $("#rp-corps").insertAdjacentHTML("beforeend", ligne({})); brancher(); };
+  brancher();
 }
 
 /* =====================================================================
