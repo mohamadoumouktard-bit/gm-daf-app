@@ -1405,7 +1405,7 @@ function ouvrirModale(titre, corps, { onSave, onDelete, libelleSave = "Enregistr
     const btn = ev.submitter; if (btn) btn.disabled = true;
     const err = await onSave();
     if (btn) btn.disabled = false;
-    if (err) $("#mod-err").innerHTML = `<div class="erreur">${esc(err)}</div>`;
+    if (err) { $("#mod-err").innerHTML = `<div class="erreur">${esc(err)}</div>`; $("#mod-err").scrollIntoView({ block: "nearest", behavior: "smooth" }); toast(err, true); }
     else d.close();
   };
   if (onDelete) $("#mod-suppr").onclick = async () => {
@@ -1418,7 +1418,7 @@ function ouvrirModale(titre, corps, { onSave, onDelete, libelleSave = "Enregistr
   const premier = $("input:not([type=checkbox]):not([disabled]),select:not([disabled]),textarea", d); if (premier) premier.focus();
 }
 
-function formulaireEntite(cle, ligne, toutes) {
+function formulaireEntite(cle, ligne, toutes, apres) {
   const e = ENTITES[cle];
   const champs = e.champs.filter(c => !c.calcule && (!c.roles || peut(c.roles)));
   const cleTable = e.cle || "id";
@@ -1442,11 +1442,13 @@ function formulaireEntite(cle, ligne, toutes) {
         if (c.t === "montant" && donnees[c.k] !== null && donnees[c.k] < 0) return `« ${c.l} » ne peut pas être négatif.`;
       }
       if (cle === "comptes_tresorerie" && ligne && donnees.parent_id === ligne.id) return "Un compte ne peut pas être son propre parent.";
-      const req = ligne ? sb.from(e.table).update(donnees).eq(cleTable, ligne[cleTable]) : sb.from(e.table).insert(donnees);
-      const { error } = await req;
+      const req = ligne ? sb.from(e.table).update(donnees).eq(cleTable, ligne[cleTable]).select(cleTable) : sb.from(e.table).insert(donnees);
+      const { data: faits, error } = await req;
       if (error) return messageErreur(error);
+      // Une modification refusée par les droits ne renvoie pas d'erreur : aucune ligne. On le dit.
+      if (ligne && (!faits || !faits.length)) return "Rien n'a été enregistré : vos droits ne permettent pas de modifier cet élément, ou il a été supprimé entre-temps.";
       toast(ligne ? "Modifications enregistrées." : "Élément ajouté.");
-      aller(cle);
+      if (apres) apres(); else aller(cle);
     },
     onDelete: ligne && estGestionnaire() ? async () => {
       const { error } = await sb.from(e.table).delete().eq(cleTable, ligne[cleTable]);
@@ -6276,7 +6278,12 @@ async function ficheSalarie(id) {
   };
   $$("[data-onglet]").forEach(b => b.onclick = () => basculer(b.dataset.onglet));
   $("#b-retour").onclick = () => aller("personnel");
-  if ($("#b-modifier")) $("#b-modifier").onclick = () => formulaireEntite("salaries", s, []);
+  if ($("#b-modifier")) $("#b-modifier").onclick = async () => {
+    // La vue v_personnel n'a pas toutes les colonnes (paye_par…) : on modifie la ligne complète, puis on revient à la fiche.
+    const { data: complet, error } = await sb.from("salaries").select("*").eq("id", s.id).single();
+    if (error) return toast(messageErreur(error), true);
+    formulaireEntite("salaries", complet, [], recharge);
+  };
   if ($("#b-evenement")) $("#b-evenement").onclick = () => formulaireEvenement(s, null, recharge);
   if ($("#b-courrier")) $("#b-courrier").onclick = () => editeurCourrier(s, {}, recharge);
   if ($("#b-sortie")) $("#b-sortie").onclick = () => formulaireSortie(s, recharge);
