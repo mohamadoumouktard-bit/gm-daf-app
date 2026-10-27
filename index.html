@@ -4513,11 +4513,11 @@ async function pagePaie() {
         .stg tfoot td{background:#E3EEF9!important;font-weight:700;border-top:2px solid #2F5395}.stg .rib{white-space:nowrap;font-size:9px}</style>
       <h1>${esc(titre)}</h1><p class="discret">${lignes.length} stagiaire(s) · indemnités dues au prorata des jours de présence · montants en FCFA</p>
       <table class="stg"><thead><tr><th>Matr.</th><th>Nom et prénoms</th><th>Banque / mode</th><th>RIB / n°</th><th>Mensuelle</th><th>Jours</th>
-        <th>Due</th><th>Payée</th></tr></thead>
+        <th>Due</th></tr></thead>
       <tbody>${lignes.map(x => `<tr><td style="white-space:nowrap">${esc(x.matricule)}</td><td>${esc(nomSalarie(x))}</td><td>${esc(x.banque || x.mode_paiement || "")}</td>
         <td class="rib">${esc(x.rib || x.numero_mobile_money || "")}</td>${mt(fcfa(x.indemnite))}${mt(qte(x.jours))}
-        ${mt(fcfa(x.du), true)}${mt(Number(x.paye) ? fcfa(x.paye) : "–")}</tr>`).join("")}</tbody>
-      <tfoot><tr><td colspan="6">TOTAL</td>${mt(fcfa(tot("du")), true)}${mt(fcfa(tot("paye")), true)}</tr></tfoot></table>
+        ${mt(fcfa(x.du), true)}</tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="6">TOTAL</td>${mt(fcfa(tot("du")), true)}</tr></tfoot></table>
       <p>Arrêté le présent état à la somme de <b>${esc(enLettres(tot("du")))} francs CFA</b> (${fcfa(tot("du"))} FCFA).</p>
       <table style="margin-top:1.5rem;border:none;width:60%"><tr><td style="border:none">Établi par</td><td style="border:none">Visa du DAF</td></tr></table>`);
   };
