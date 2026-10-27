@@ -4506,13 +4506,18 @@ async function pagePaie() {
     $("#b-stg-xls").onclick = () => exporterTableau(`indemnites_stage_${annee}_${String(mois).padStart(2, "0")}.xlsx`,
       ["Matricule", "Nom et prénoms", "Mode", "Banque", "RIB", "Indemnité mensuelle", "Jours", "Due", "Payée", "Reste"],
       lignes.map(x => [x.matricule, nomSalarie(x), x.mode_paiement, x.banque, x.rib, Number(x.indemnite), Number(x.jours), Number(x.du), Number(x.paye), Number(x.reste)]), titre);
-    $("#b-stg-imp").onclick = () => imprimerHtml(titre, `<h1>${esc(titre)}</h1><p class="discret">Indemnités dues au prorata des jours de présence · montants en FCFA</p>
-      <table><thead><tr><th>Matr.</th><th>Nom et prénoms</th><th>Banque / mode</th><th>RIB / n°</th><th style="text-align:right">Mensuelle</th><th style="text-align:right">Jours</th>
-        <th style="text-align:right">Due</th><th style="text-align:right">Payée</th></tr></thead>
-      <tbody>${lignes.map(x => `<tr><td>${esc(x.matricule)}</td><td>${esc(nomSalarie(x))}</td><td>${esc(x.banque || x.mode_paiement || "")}</td>
-        <td>${esc(x.rib || x.numero_mobile_money || "")}</td><td style="text-align:right">${fcfa(x.indemnite)}</td><td style="text-align:right">${qte(x.jours)}</td>
-        <td style="text-align:right"><b>${fcfa(x.du)}</b></td><td style="text-align:right">${Number(x.paye) ? fcfa(x.paye) : "–"}</td></tr>`).join("")}</tbody>
-      <tfoot><tr><td colspan="6"><b>TOTAL</b></td><td style="text-align:right"><b>${fcfa(tot("du"))}</b></td><td style="text-align:right"><b>${fcfa(tot("paye"))}</b></td></tr></tfoot></table>
+    // Même mise en page que le livre de paie : une page paysage, montants sur une seule ligne.
+    const mt = (v, fort) => `<td style="text-align:right;white-space:nowrap${fort ? ";font-weight:700" : ""}">${v}</td>`;
+    $("#b-stg-imp").onclick = () => imprimerHtml(titre, `<style>@page{size:A4 landscape;margin:.8cm}body{max-width:none!important;margin:0!important;padding:0!important}
+        .stg td,.stg th{font-size:10px;padding:.2rem .35rem}.stg th{text-align:center;white-space:nowrap}.stg tr:nth-child(even) td{background:#F4F6F9}
+        .stg tfoot td{background:#E3EEF9!important;font-weight:700;border-top:2px solid #2F5395}.stg .rib{white-space:nowrap;font-size:9px}</style>
+      <h1>${esc(titre)}</h1><p class="discret">${lignes.length} stagiaire(s) · indemnités dues au prorata des jours de présence · montants en FCFA</p>
+      <table class="stg"><thead><tr><th>Matr.</th><th>Nom et prénoms</th><th>Banque / mode</th><th>RIB / n°</th><th>Mensuelle</th><th>Jours</th>
+        <th>Due</th><th>Payée</th></tr></thead>
+      <tbody>${lignes.map(x => `<tr><td style="white-space:nowrap">${esc(x.matricule)}</td><td>${esc(nomSalarie(x))}</td><td>${esc(x.banque || x.mode_paiement || "")}</td>
+        <td class="rib">${esc(x.rib || x.numero_mobile_money || "")}</td>${mt(fcfa(x.indemnite))}${mt(qte(x.jours))}
+        ${mt(fcfa(x.du), true)}${mt(Number(x.paye) ? fcfa(x.paye) : "–")}</tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="6">TOTAL</td>${mt(fcfa(tot("du")), true)}${mt(fcfa(tot("paye")), true)}</tr></tfoot></table>
       <p>Arrêté le présent état à la somme de <b>${esc(enLettres(tot("du")))} francs CFA</b> (${fcfa(tot("du"))} FCFA).</p>
       <table style="margin-top:1.5rem;border:none;width:60%"><tr><td style="border:none">Établi par</td><td style="border:none">Visa du DAF</td></tr></table>`);
   };
