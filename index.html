@@ -322,7 +322,7 @@ const adresseRetour = () => CONFIG.URL_APPLICATION || location.origin + location
    l'application RH ne montre que les pages ci-dessous. */
 const APP = window.GM_APP === "rh" ? "rh" : "daf";
 const NOM_APP = APP === "rh" ? "Guest Markets RH" : "Guest Markets Management";
-const PAGES_RH = new Set(["accueil", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_evaluations", "mon_equipe",
+const PAGES_RH = new Set(["accueil", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_besoins", "mes_evaluations", "mon_equipe",
   "personnel", "paie", "conges", "demandes_personnel", "evaluations", "utilisateurs", "postes", "profil"]);
 const GROUPES_RH = new Set(["Mon espace", "Ressources humaines", "Administration", "Compte"]);
 const adresseApp = app => new URL((app === "rh" ? "rh.html" : "./") + location.search, location.href).href;
@@ -343,6 +343,7 @@ const ROLES = {
   commercial: "Commercial (prépare les ventes)",
   manager: "Manager de catégorie",
   rh: "Ressources humaines",
+  controleur: "Contrôleur (fiches de besoin)",
   auditeur: "Auditeur",
   dg: "Direction générale",
   supply_chain: "Responsable supply chain",
@@ -360,6 +361,7 @@ const ROLES_DESCRIPTION = {
   commercial: "Prépare les ventes : clients, proformas, factures en brouillon, relances, suivi des livraisons ; consulte les ventes et créances. N'encaisse pas et ne valide pas.",
   manager: "Saisit les achats de ses catégories de produits. Ne valide ni ne paie.",
   rh: "Tient les dossiers du personnel et prépare la paie. Ne paie pas.",
+  controleur: "Direction financière : contrôle la conformité des fiches de besoin, les regroupe en bordereau pour le DAF, accepte les justifications. Ne valide ni ne paie.",
   auditeur: "Consulte tout, y compris le journal des modifications. Ne modifie rien.",
   dg: "Consulte les états et le tableau de bord.",
   supply_chain: "Parc automobile (fiches, documents, entretiens), valide les relevés kilométriques et entretiens de son adjoint, organise enlèvements et livraisons.",
@@ -663,6 +665,7 @@ const NAV = [
   { id: "mes_conges", l: "Mes congés", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mes_bulletins", l: "Mes bulletins", roles: TOUT_LE_MONDE, cond: () => aEspace() && !estStagiaireEspace() },
   { id: "mes_demandes", l: "Mes demandes", roles: TOUT_LE_MONDE, cond: () => aEspace() },
+  { id: "mes_besoins", l: "Mes fiches de besoin", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mes_evaluations", l: "Mes évaluations", roles: TOUT_LE_MONDE, cond: () => aEspace() && !estStagiaireEspace() },
   { id: "mon_equipe", l: "Mon équipe", roles: TOUT_LE_MONDE, cond: () => aUneEquipe() },
   { groupe: "Pilotage", roles: FINANCE },
@@ -670,8 +673,9 @@ const NAV = [
   { id: "etats", l: "États financiers", roles: FINANCE },
   { id: "analytique", l: "Résultat analytique", roles: FINANCE },
   { id: "budget", l: "Budget", roles: FINANCE },
-  { groupe: "Finances", roles: LECTEURS_ACHATS },
+  { groupe: "Finances", roles: [...LECTEURS_ACHATS, "controleur", "caissier"] },
   { id: "achats", l: "Achats", roles: LECTEURS_ACHATS },
+  { id: "fiches_besoin", l: "Fiches de besoin", roles: ["controleur", "daf", "admin", "auditeur", "dg", "tresorier", "caissier", "comptable"] },
   { id: "tresorerie", l: "Trésorerie", roles: [...FINANCE, "caissier"] },
   { id: "situation_tresorerie", l: "Situation de trésorerie", roles: FINANCE },
   { id: "dettes", l: "Dettes fournisseurs", roles: FINANCE },
@@ -1051,7 +1055,7 @@ const ICONE_PAGE = {
   categories_operation: "etiquette", plan_comptable: "liste", activites: "mallette", sites: "repere", vehicules: "voiture", comptes_tresorerie: "banque",
   parametres: "reglages", utilisateurs: "bouclier", postes: "mallette", journal: "historique", profil: "personne",
   mon_dossier: "personne", mes_conges: "calendrier", mes_bulletins: "billet", mes_demandes: "document", mes_evaluations: "cible", mon_equipe: "groupe",
-  demandes_personnel: "document", evaluations: "cible"
+  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier"
 };
 const initiales = p => ((p.prenom || "").trim()[0] || "") + ((p.nom || "").trim()[0] || "") || (p.email || "?")[0];
 
@@ -1272,6 +1276,7 @@ async function pageAccueilRH() {
     ["mes_conges", "Mes congés", "Demander un congé, voir mon solde", "orange"],
     ["mes_bulletins", "Mes bulletins", "Mes bulletins de paie", "vert"],
     ["mes_demandes", "Mes demandes", "Attestation, avance, formation", "violet"],
+    ["mes_besoins", "Mes fiches de besoin", "Exprimer un besoin payé par la caisse, le justifier", "orange"],
     ["mon_equipe", "Mon équipe", "Congés et demandes à viser", "bleu"]]
     .filter(([pg]) => NAV.some(n => n.id === pg && navVisible(n)));
   $("#contenu").innerHTML = `<div class="accueil">
@@ -2059,6 +2064,25 @@ async function aFaireFinances() {
     if (nd) pts.push({ texte: `<b>${nd} demande(s) du personnel</b> (attestations, mises à jour du dossier, formations, avances) sont à traiter.`, page: "demandes_personnel", bouton: "Traiter" });
     const ne = await compter(sb.from("evaluations").select("id", { count: "exact", head: true }).in("statut", ["Évaluée", "Signée"]));
     if (ne) pts.push({ texte: `<b>${ne} évaluation(s) annuelle(s)</b> faites par les responsables sont à clôturer.`, page: "evaluations", bouton: "Clôturer" });
+  }
+  if (peut(BESOINS_LECTEURS)) {
+    const { data: fb } = await sb.from("v_fiches_besoin").select("statut, en_retard").in("statut", ["Visée", "Contrôlée", "Validée", "Payée", "Justifiée", "Monnaie à rendre"]);
+    const nb = st => (fb || []).filter(f => f.statut === st).length;
+    if (peut(BESOINS_CONTROLE)) {
+      if (nb("Visée")) pts.push({ texte: `<b>${nb("Visée")} fiche(s) de besoin</b> attendent le contrôle de conformité.`, page: "fiches_besoin", param: { onglet: "controle" }, bouton: "Contrôler" });
+      if (nb("Contrôlée")) pts.push({ texte: `<b>${nb("Contrôlée")} fiche(s) de besoin contrôlée(s)</b> à regrouper dans un bordereau pour le DAF.`, page: "fiches_besoin", param: { onglet: "bordereau" }, bouton: "Transmettre" });
+      if (nb("Justifiée")) pts.push({ texte: `<b>${nb("Justifiée")} justification(s) de fiche de besoin</b> à contrôler.`, page: "fiches_besoin", param: { onglet: "justif" }, bouton: "Contrôler" });
+      const retard = (fb || []).filter(f => f.en_retard).length;
+      if (retard) pts.push({ texte: `<b>${retard} fiche(s) de besoin payée(s) non justifiée(s)</b> au-delà de 48 heures.`, page: "fiches_besoin", param: { onglet: "justif" }, bouton: "Voir" });
+    }
+    if (peut(BESOINS_CAISSE)) {
+      if (nb("Validée")) pts.push({ texte: `<b>${nb("Validée")} fiche(s) de besoin validée(s)</b> par le DAF restent à payer.`, page: "fiches_besoin", param: { onglet: "payer" }, bouton: "Payer" });
+      if (nb("Monnaie à rendre")) pts.push({ texte: `<b>${nb("Monnaie à rendre")} fiche(s) de besoin</b> : monnaie à recevoir en caisse.`, page: "fiches_besoin", param: { onglet: "monnaie" }, bouton: "Recevoir" });
+    }
+    if (peut(VALIDATION)) {
+      const n = await compter(sb.from("bordereaux_besoins").select("id", { count: "exact", head: true }).eq("statut", "Envoyé"));
+      if (n) pts.push({ texte: `<b>${n} bordereau(x) de fiches de besoin</b> attendent votre validation.`, page: "fiches_besoin", param: { onglet: "daf" }, bouton: "Décider" });
+    }
   }
   if (peut(VALIDATION)) {
     const n = await compter(sb.from("achats").select("id", { count: "exact", head: true }).eq("statut", "Soumis"));
@@ -6908,10 +6932,327 @@ async function editeurCourrier(s, o, retour) {
   };
 }
 
+/* =====================================================================
+   Lot 11 — Fiches de besoin payées par la caisse
+   Salarié (émet) → responsable (vise) → contrôleur (contrôle, bordereau)
+   → DAF (valide) → caisse (paie : avance à justifier) → salarié (justifie
+   sous 48 h, photo du reçu) → contrôleur (accepte : la dépense passe en
+   charge) → caisse (reçoit la monnaie). La base fait tous les contrôles.
+   ===================================================================== */
+const BESOINS_CONTROLE = ["controleur", "daf", "admin"];
+const BESOINS_CAISSE = ["tresorier", "caissier", "daf", "admin"];
+const BESOINS_LECTEURS = ["controleur", "daf", "admin", "auditeur", "dg", "tresorier", "caissier", "comptable"];
+const CLASSE_FICHE = { Soumise: "attente", "Visée": "attente", "À corriger": "alerte", "Contrôlée": "attente", "Au DAF": "attente", "Validée": "ok",
+  "Payée": "attente", "Justifiée": "attente", "Monnaie à rendre": "attente", "Soldée": "ok", "Refusée": "alerte", "Annulée": "inactif" };
+// Pour le salarié : où en est sa fiche, en clair.
+const LIB_FICHE_SALARIE = { Soumise: "Chez votre responsable", "Visée": "Au contrôle (direction financière)", "Contrôlée": "Contrôlée, part au DAF",
+  "Au DAF": "Chez le DAF", "Validée": "Validée : à retirer à la caisse", "Payée": "Payée : à justifier", "Justifiée": "Justification en contrôle",
+  "Monnaie à rendre": "Monnaie à rendre à la caisse" };
+const pastilleFiche = (f, pourSalarie) => `<span class="pastille ${f.en_retard ? "alerte" : CLASSE_FICHE[f.statut] || ""}">${esc((pourSalarie && LIB_FICHE_SALARIE[f.statut]) || f.statut)}${f.en_retard ? " · en retard" : ""}</span>`;
+const montantFiche = f => f.montant_paye ?? f.montant_valide ?? f.montant;
+const quand = d => d ? dateCourte(String(d).slice(0, 10)) : "";
+
+async function deposerJustificatif(f, fichier) {
+  const g = await compresserImage(fichier);
+  if (g.size > 10 * 1024 * 1024) throw new Error("Fichier trop lourd (10 Mo au plus).");
+  const ext = ((g.name || "").match(/\.(\w+)$/) || [, g.type === "application/pdf" ? "pdf" : "jpg"])[1].toLowerCase();
+  const chemin = `${f.salarie_id}/${f.id}/${(crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(16).slice(2))}.${ext}`;
+  const { error } = await sb.storage.from("justificatifs").upload(chemin, g, { contentType: g.type || undefined, upsert: false });
+  if (error) throw error;
+  return chemin;
+}
+async function voirJustificatif(chemin) {
+  const { data, error } = await sb.storage.from("justificatifs").createSignedUrl(chemin, 300);
+  if (error) return toast(messageErreur(error), true);
+  window.open(data.signedUrl, "_blank", "noopener");
+}
+
+/* Détail d'une fiche : articles, étapes et commentaires, pièces jointes. */
+function detailFicheHtml(f) {
+  const etapes = [[`Émise par ${f.beneficiaire || "le salarié"}`, f.created_at, f.motif],
+    f.visa_le && [f.statut === "Refusée" && !f.controle_le ? "Avis défavorable du responsable" : "Visée par le responsable", f.visa_le, f.visa_commentaire],
+    f.controle_le && [f.statut === "À corriger" ? "Renvoyée pour correction" : f.montant_valide ? `Contrôlée : ${fcfa(f.montant_valide)} FCFA retenus${f.categorie ? " · " + f.categorie : ""}` : "Refusée au contrôle", f.controle_le, f.controle_commentaire],
+    f.bordereau && [`Transmise au DAF (bordereau ${f.bordereau})`, null, null],
+    f.decision_le && [f.decision_par && f.statut === "Refusée" ? "Refusée par le DAF" : "Validée par le DAF", f.decision_le, f.decision_commentaire],
+    f.paye_le && [`Payée : ${fcfa(f.montant_paye)} FCFA remis`, f.paye_le, null],
+    f.justif_le && [`Justifiée : ${fcfa(f.justif_montant)} FCFA dépensés`, f.justif_le, f.justif_note],
+    f.justif_controle_le && ["Justification acceptée", f.justif_controle_le, f.justif_commentaire],
+    f.statut === "Payée" && f.justif_commentaire && !f.justif_controle_le && ["Justification à reprendre", null, f.justif_commentaire]].filter(Boolean);
+  return `<p>${pastilleFiche(f)} ${f.urgence === "Urgente" ? `<span class="pastille alerte">urgent</span>` : ""} <b>${esc(f.objet)}</b></p>
+    <div class="defil"><table><thead><tr><th>Article</th><th class="montant">Qté</th><th class="montant">Prix unitaire</th><th class="montant">Montant</th></tr></thead><tbody>
+      ${(f.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="montant">${qte(l.quantite)}</td><td class="montant">${fcfa(l.prix_unitaire)}</td><td class="montant">${fcfa(l.montant)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="3">Total demandé</td><td class="montant">${fcfa(f.montant)}</td></tr></tfoot></table></div>
+    <h3 style="margin:1rem 0 .3rem">Étapes</h3><ul class="points">${etapes.map(([l, d, c]) => `<li><p><b>${esc(l)}</b>${d ? ` <span class="discret petit">· ${esc(quand(d))}</span>` : ""}${c ? `<br><span class="petit">${esc(c)}</span>` : ""}</p></li>`).join("")}</ul>
+    ${f.refus_motif ? `<div class="erreur">${esc(f.refus_motif)}</div>` : ""}
+    ${(f.justif_pieces || []).length ? `<p>${f.justif_pieces.map((p, i) => `<button type="button" class="btn" data-piece="${esc(p)}">Pièce ${i + 1}</button>`).join(" ")}</p>` : ""}`;
+}
+const brancherPieces = () => $$("[data-piece]").forEach(b => b.onclick = () => voirJustificatif(b.dataset.piece));
+function voirFicheBesoin(f) {
+  ouvrirModale(`Fiche de besoin ${f.numero}`, detailFicheHtml(f), { large: true });
+  brancherPieces();
+}
+
+/* ---------- Le salarié ---------- */
+function formulaireFicheBesoin(f, retour) {
+  const ligne = l => `<tr><td><input class="fb-des" value="${esc(l.designation || "")}" aria-label="Désignation"></td>
+    <td><input type="number" class="fb-q" min="0.01" step="any" value="${esc(l.quantite ?? 1)}" style="width:5rem" aria-label="Quantité"></td>
+    <td><input type="number" class="fb-pu" min="0" step="1" value="${esc(l.prix_unitaire ?? "")}" style="width:8rem" aria-label="Prix unitaire estimé"></td>
+    <td class="montant fb-mt"></td><td><button type="button" class="btn-lien fb-suppr">Retirer</button></td></tr>`;
+  ouvrirModale(f ? `Corriger la fiche ${f.numero}` : "Nouvelle fiche de besoin", `
+    ${f && f.controle_commentaire ? `<div class="info">À corriger : ${esc(f.controle_commentaire)}</div>` : ""}
+    <label for="fb-objet">Objet *</label><input id="fb-objet" value="${esc(f ? f.objet : "")}" placeholder="Ex. : fournitures de bureau, carburant groupe électrogène…">
+    <label for="fb-motif">Pourquoi ce besoin ?</label><textarea id="fb-motif" rows="2">${esc(f ? f.motif || "" : "")}</textarea>
+    <label for="fb-urg">Urgence</label><select id="fb-urg"><option>Normale</option><option ${f && f.urgence === "Urgente" ? "selected" : ""}>Urgente</option></select>
+    <h3 style="margin:1rem 0 .3rem">Articles</h3>
+    <div class="defil"><table class="saisie"><thead><tr><th>Désignation</th><th>Qté</th><th>Prix unitaire estimé</th><th class="montant">Montant</th><th></th></tr></thead>
+      <tbody id="fb-corps">${(f && f.lignes && f.lignes.length ? f.lignes : [{}]).map(ligne).join("")}</tbody>
+      <tfoot><tr><td colspan="3">Total</td><td class="montant" id="fb-total"></td><td></td></tr></tfoot></table></div>
+    <p><button type="button" class="btn" id="fb-ajout">Ajouter un article</button></p>
+    <p class="discret petit">La fiche part à votre responsable, puis au contrôle de la direction financière et au DAF. Une fois l'argent remis par la caisse,
+      vous avez 48 heures pour la justifier : photo du reçu et montant réellement dépensé, la monnaie revient à la caisse.</p>`, {
+    large: true, libelleSave: f ? "Renvoyer" : "Émettre la fiche",
+    onSave: async () => {
+      const lignes = $$("#fb-corps tr").map(tr => ({ designation: $(".fb-des", tr).value.trim(), quantite: Number($(".fb-q", tr).value || 0), prix_unitaire: Number($(".fb-pu", tr).value || 0) }))
+        .filter(l => l.designation || l.prix_unitaire);
+      if (!$("#fb-objet").value.trim()) return "Indiquez l'objet du besoin.";
+      if (!lignes.length) return "Ajoutez au moins un article.";
+      if (lignes.some(l => !l.designation || !(l.quantite > 0) || !(l.prix_unitaire > 0))) return "Chaque article a une désignation, une quantité et un prix.";
+      try {
+        await appeler("emettre_fiche_besoin", { p: { objet: $("#fb-objet").value.trim(), motif: $("#fb-motif").value.trim(), urgence: $("#fb-urg").value, lignes }, p_id: f ? f.id : null });
+      } catch (err) { return messageErreur(err); }
+      toast(f ? "Fiche renvoyée." : "Fiche de besoin émise."); retour();
+    }
+  });
+  const total = () => { let t = 0; $$("#fb-corps tr").forEach(tr => { const m = Math.round(Number($(".fb-q", tr).value || 0) * Number($(".fb-pu", tr).value || 0)); t += m; $(".fb-mt", tr).textContent = m ? fcfa(m) : ""; });
+    $("#fb-total").textContent = fcfa(t); };
+  const brancher = () => { $$("#fb-corps input").forEach(i => i.oninput = total); $$(".fb-suppr").forEach(b => b.onclick = () => { if ($$("#fb-corps tr").length > 1) b.closest("tr").remove(); total(); }); total(); };
+  $("#fb-ajout").onclick = () => { $("#fb-corps").insertAdjacentHTML("beforeend", ligne({})); brancher(); };
+  brancher();
+}
+
+function formulaireJustification(f, retour) {
+  ouvrirModale(`Justifier la fiche ${f.numero}`, `<p>Vous avez reçu <b>${fcfa(f.montant_paye)} FCFA</b> le ${esc(quand(f.paye_le))} pour « ${esc(f.objet)} ».</p>
+    ${f.justif_commentaire ? `<div class="info">À reprendre : ${esc(f.justif_commentaire)}</div>` : ""}
+    <label for="j-mt">Montant réellement dépensé (FCFA) *</label><input type="number" id="j-mt" min="0" step="1" value="${esc(f.montant_paye)}">
+    <p id="j-reste" class="petit"></p>
+    <label for="j-photo">Photo du reçu ou de la facture *</label>
+    <input type="file" id="j-photo" accept="image/*,application/pdf" capture="environment" multiple class="champ-photo">
+    <label for="j-note">Observation</label><input id="j-note" placeholder="Facultatif">`, {
+    libelleSave: "Envoyer la justification",
+    onSave: async () => {
+      if ($("#j-mt").value === "") return "Indiquez le montant dépensé.";
+      const mt = Number($("#j-mt").value);
+      if (!(mt >= 0)) return "Montant invalide.";
+      if (mt > Number(f.montant_paye)) return `Vous avez reçu ${fcfa(f.montant_paye)} FCFA : une dépense supérieure fait l'objet d'une nouvelle fiche.`;
+      const fichiers = [...($("#j-photo").files || [])];
+      if (mt > 0 && !fichiers.length) return "Joignez la photo du reçu ou de la facture.";
+      const pieces = [];
+      try { for (const x of fichiers) pieces.push(await deposerJustificatif(f, x)); } catch (err) { return messageErreur(err); }
+      try { await appeler("justifier_fiche_besoin", { p_id: f.id, p_montant: mt, p_note: $("#j-note").value.trim() || null, p_pieces: pieces }); }
+      catch (err) { return messageErreur(err); }
+      toast("Justification envoyée au contrôle."); retour();
+    }
+  });
+  const maj = () => { const r = Number(f.montant_paye) - Number($("#j-mt").value || 0); $("#j-reste").textContent = r > 0 ? `Vous rendrez ${fcfa(r)} FCFA de monnaie à la caisse.` : ""; };
+  $("#j-mt").oninput = maj; maj();
+}
+
+async function vueMesBesoins(zone, actions) {
+  const fiches = etat.mesFiches || [];
+  actions.innerHTML = `<button class="btn btn-principal" id="b-fb">${ic("plus", 16)} Nouvelle fiche de besoin</button>`;
+  // Une carte par fiche : lisible sur téléphone, sans tableau à faire défiler.
+  zone.innerHTML = `<div class="panneau"><ul class="points">
+    ${fiches.map(f => `<li><p><b>${esc(f.objet)}</b> · <b class="num" style="white-space:nowrap">${fcfa(montantFiche(f))} FCFA</b>${f.urgence === "Urgente" ? ` <span class="pastille alerte">urgent</span>` : ""}
+        <br><span class="discret petit">${esc(f.numero)} · ${esc(quand(f.created_at))}</span><br>${pastilleFiche(f, true)}
+        ${f.refus_motif ? `<br><span class="petit">${esc(f.refus_motif)}</span>` : ""}
+        ${f.statut === "À corriger" && f.controle_commentaire ? `<br><span class="petit">À corriger : ${esc(f.controle_commentaire)}</span>` : ""}
+        ${f.statut === "Payée" && f.justif_commentaire ? `<br><span class="petit">Justification à reprendre : ${esc(f.justif_commentaire)}</span>` : ""}
+        ${f.statut === "Monnaie à rendre" ? `<br><span class="petit">Rendez ${fcfa(f.montant_paye - f.justif_montant)} FCFA à la caisse.</span>` : ""}</p>
+      <div class="actions-ligne"><button class="btn" data-voir="${f.id}">Voir</button>
+        ${f.statut === "Payée" ? `<button class="btn btn-principal" data-justif="${f.id}">Justifier</button>` : ""}
+        ${f.statut === "À corriger" ? `<button class="btn btn-principal" data-corr="${f.id}">Corriger</button>` : ""}
+        ${["Soumise", "Visée", "À corriger"].includes(f.statut) ? `<button class="btn" data-ann="${f.id}">Annuler</button>` : ""}</div></li>`).join("")
+      || `<li><p class="vide">Aucune fiche. « Nouvelle fiche de besoin » pour exprimer un besoin à payer par la caisse.</p></li>`}</ul></div>`;
+  const fiche = id => fiches.find(f => f.id === id);
+  $("#b-fb").onclick = () => formulaireFicheBesoin(null, recharger);
+  $$("[data-voir]").forEach(b => b.onclick = () => voirFicheBesoin(fiche(b.dataset.voir)));
+  $$("[data-justif]").forEach(b => b.onclick = () => formulaireJustification(fiche(b.dataset.justif), recharger));
+  $$("[data-corr]").forEach(b => b.onclick = () => formulaireFicheBesoin(fiche(b.dataset.corr), recharger));
+  $$("[data-ann]").forEach(b => b.onclick = async () => {
+    if (!confirm("Annuler cette fiche de besoin ?")) return;
+    try { await appeler("annuler_ma_fiche_besoin", { p_id: b.dataset.ann }); toast("Fiche annulée."); recharger(); } catch (err) { toast(messageErreur(err), true); }
+  });
+}
+
+/* ---------- Direction financière, DAF, caisse ---------- */
+const optionsCaisses = () => `<option value="">—</option>` + (etat.refs.comptes_tresorerie || []).filter(c => c.actif !== false && c.type === "Caisse")
+  .map(c => `<option value="${c.id}">${esc(LISTES.comptes_tresorerie.lib(c))}</option>`).join("");
+
+function formulaireControleFiche(f, retour) {
+  ouvrirModale(`Contrôler la fiche ${f.numero}`, `<p class="discret">${esc(f.beneficiaire)} · ${esc(f.emploi || "")}</p>${detailFicheHtml(f)}
+    <h3 style="margin:1rem 0 .3rem">Contrôle</h3>
+    <label for="c-dec">Décision *</label><select id="c-dec"><option value="Conforme">Conforme : transmettre au DAF</option>
+      <option value="À corriger">À corriger : renvoyer au salarié</option><option value="Refusée">Refusée</option></select>
+    <div id="c-conforme"><div class="grille2">
+      <div><label for="c-cat">Catégorie de dépense *</label><select id="c-cat">${optionsCategories(c => ["Charge", "Immobilisation"].includes(c.nature))}</select></div>
+      <div><label for="c-mt">Montant retenu (FCFA)</label><input type="number" id="c-mt" min="1" max="${esc(f.montant)}" step="1" value="${esc(f.montant)}"></div>
+      <div><label for="c-act">Activité</label><select id="c-act">${optionsRef("activites", null, () => true, "Général")}</select></div>
+      <div><label for="c-site">Bureau ou site</label><select id="c-site">${optionsRef("sites", null)}</select></div>
+      <div><label for="c-veh">Véhicule</label><select id="c-veh">${optionsRef("vehicules", null)}</select></div></div></div>
+    <label for="c-com">Commentaire</label><textarea id="c-com" rows="2" placeholder="Obligatoire pour une correction ou un refus"></textarea>`, {
+    large: true, libelleSave: "Enregistrer le contrôle",
+    onSave: async () => {
+      try {
+        await appeler("controler_fiche_besoin", { p_id: f.id, p: { decision: $("#c-dec").value, categorie_id: $("#c-cat").value || null, montant_valide: $("#c-mt").value || null,
+          activite_id: $("#c-act").value || null, site_id: $("#c-site").value || null, vehicule_id: $("#c-veh").value || null, commentaire: $("#c-com").value.trim() || null } });
+      } catch (err) { return messageErreur(err); }
+      toast("Contrôle enregistré."); retour();
+    }
+  });
+  brancherPieces();
+  $("#c-dec").onchange = () => { $("#c-conforme").hidden = $("#c-dec").value !== "Conforme"; };
+}
+
+function formulaireDecisionBordereau(b, fiches, retour) {
+  ouvrirModale(`Bordereau ${b.numero}`, `<p class="discret">Validez ou refusez chaque fiche. Une fiche refusée revient au salarié avec votre motif.</p>
+    <div class="defil"><table><thead><tr><th>Fiche</th><th>Bénéficiaire</th><th>Objet</th><th class="montant">Montant</th><th>Décision</th><th>Motif du refus</th></tr></thead><tbody>
+    ${fiches.map(f => `<tr><td class="code"><button type="button" class="btn-lien" data-fbv="${f.id}">${esc(f.numero)}</button></td><td>${esc(f.beneficiaire)}</td>
+      <td>${esc(f.objet)}<div class="discret petit">${esc(f.categorie || "")}</div></td><td class="montant">${fcfa(f.montant_valide)}</td>
+      <td><select data-dec="${f.id}" aria-label="Décision"><option>Validée</option><option>Refusée</option></select></td>
+      <td><input data-com="${f.id}" aria-label="Motif"></td></tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="3">Total</td><td class="montant">${fcfa(fiches.reduce((t, f) => t + Number(f.montant_valide), 0))}</td><td colspan="2"></td></tr></tfoot></table></div>`, {
+    large: true, libelleSave: "Enregistrer mes décisions",
+    onSave: async () => {
+      const dec = fiches.map(f => ({ fiche_id: f.id, decision: $(`[data-dec="${f.id}"]`).value, commentaire: $(`[data-com="${f.id}"]`).value.trim() || null }));
+      if (dec.some(d => d.decision === "Refusée" && !d.commentaire)) return "Motivez chaque refus.";
+      try { await appeler("decider_bordereau_besoins", { p_bordereau: b.id, p_decisions: dec }); } catch (err) { return messageErreur(err); }
+      toast("Bordereau traité."); retour();
+    }
+  });
+  $$("[data-fbv]").forEach(x => x.onclick = () => voirFicheBesoin(fiches.find(f => f.id === x.dataset.fbv)));
+}
+
+function imprimerBordereau(b, fiches) {
+  const total = fiches.reduce((t, f) => t + Number(f.montant_valide || 0), 0);
+  imprimerHtml(`Bordereau de fiches de besoin ${b.numero}`, `<h1>Bordereau de fiches de besoin ${esc(b.numero)}</h1>
+    <p class="discret">Établi le ${esc(quand(b.cree_le))} par ${esc(nomProfil(b.cree_par))}${b.decide_le ? ` · décidé le ${esc(quand(b.decide_le))}` : ""} · montants en FCFA</p>
+    <table><thead><tr><th>N°</th><th>Bénéficiaire</th><th>Objet</th><th>Catégorie</th><th style="text-align:right">Montant</th><th>Décision</th></tr></thead>
+    <tbody>${fiches.map(f => `<tr><td style="white-space:nowrap">${esc(f.numero)}</td><td>${esc(f.beneficiaire)}</td><td>${esc(f.objet)}</td><td>${esc(f.categorie || "")}</td>
+      <td style="text-align:right;white-space:nowrap">${fcfa(f.montant_valide)}</td><td>${["Au DAF"].includes(f.statut) ? "" : f.statut === "Refusée" ? "Refusée" : "Validée"}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="4"><b>TOTAL</b></td><td style="text-align:right;white-space:nowrap"><b>${fcfa(total)}</b></td><td></td></tr></tfoot></table>
+    <p>Arrêté le présent bordereau à la somme de <b>${esc(enLettres(total))} francs CFA</b>.</p>
+    <table style="margin-top:1.5rem;border:none;width:70%"><tr><td style="border:none">Le contrôleur</td><td style="border:none">Visa du DAF</td></tr></table>`);
+}
+
+function formulaireCaisseFiche(f, recevoir, retour) {
+  const montant = recevoir ? f.montant_paye - f.justif_montant : f.montant_valide;
+  ouvrirModale(`${recevoir ? "Recevoir la monnaie" : "Payer"} — fiche ${f.numero}`, `<p><b>${fcfa(montant)} FCFA</b> ${recevoir ? "rendus par" : "à remettre à"} <b>${esc(f.beneficiaire)}</b> · ${esc(f.objet)}</p>
+    <div class="grille2"><div><label for="p-cpt">Caisse *</label><select id="p-cpt">${optionsCaisses()}</select></div>
+      <div><label for="p-date">Date</label><input type="date" id="p-date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
+    <p class="discret petit">${recevoir ? "Recette de caisse : l'avance du salarié est soldée." : "Avance à justifier au nom du salarié (compte 4213) : il a 48 heures pour apporter le reçu."}</p>`, {
+    libelleSave: recevoir ? "Encaisser" : "Payer",
+    onSave: async () => {
+      if (!$("#p-cpt").value) return "Choisissez la caisse.";
+      try { await appeler(recevoir ? "recevoir_monnaie_fiche" : "payer_fiche_besoin", { p_id: f.id, p_compte: $("#p-cpt").value, p_date: $("#p-date").value || null }); }
+      catch (err) { return messageErreur(err); }
+      toast(recevoir ? "Monnaie encaissée : fiche soldée." : "Fiche payée."); retour();
+    }
+  });
+}
+
+function formulaireControleJustification(f, retour) {
+  const reste = Number(f.montant_paye) - Number(f.justif_montant);
+  ouvrirModale(`Justification — fiche ${f.numero}`, `<p class="discret">${esc(f.beneficiaire)}</p>${detailFicheHtml(f)}
+    <p>Remis : <b>${fcfa(f.montant_paye)}</b> · dépensé : <b>${fcfa(f.justif_montant)}</b>${reste > 0 ? ` · monnaie à rendre : <b>${fcfa(reste)}</b>` : ""} FCFA.
+      La dépense passera en « ${esc(f.categorie || "")} ».</p>
+    <label for="jc-dec">Décision</label><select id="jc-dec"><option value="Acceptée">Accepter la justification</option><option value="À reprendre">À reprendre par le salarié</option></select>
+    <label for="jc-com">Commentaire</label><textarea id="jc-com" rows="2" placeholder="Obligatoire si à reprendre"></textarea>`, {
+    large: true, libelleSave: "Enregistrer",
+    onSave: async () => {
+      try { await appeler("controler_justification", { p_id: f.id, p_decision: $("#jc-dec").value, p_commentaire: $("#jc-com").value.trim() || null }); }
+      catch (err) { return messageErreur(err); }
+      toast("Justification traitée."); retour();
+    }
+  });
+  brancherPieces();
+}
+
+async function pageFichesBesoin() {
+  await chargerRefsFinance();
+  const [{ data, error }, { data: bords }] = await Promise.all([
+    sb.from("v_fiches_besoin").select("*").order("created_at", { ascending: false }),
+    sb.from("bordereaux_besoins").select("*").order("cree_le", { ascending: false })]);
+  if (error) throw error;
+  const fiches = data || [], bordereaux = bords || [];
+  const ctrl = peut(BESOINS_CONTROLE), daf = peut(VALIDATION), caisse = peut(BESOINS_CAISSE);
+  const par = (...st) => fiches.filter(f => st.includes(f.statut));
+  const onglets = [["controle", "À contrôler", par("Visée").length], ["bordereau", "À transmettre au DAF", par("Contrôlée").length],
+    ["daf", "Bordereaux", bordereaux.filter(b => b.statut === "Envoyé").length], ["payer", "À payer", par("Validée").length],
+    ["justif", "Justifications", par("Payée", "Justifiée").length], ["monnaie", "Monnaie à recevoir", par("Monnaie à rendre").length], ["toutes", "Toutes", null]];
+  const prioritaire = (ctrl ? ["controle", "justif", "bordereau"] : []).concat(daf ? ["daf"] : [], caisse ? ["payer", "monnaie"] : []).find(k => onglets.find(o => o[0] === k)[2]);
+  let onglet = etat.param.onglet || etat.ongletBesoins || prioritaire || "toutes";
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Fiches de besoin</h1>
+      <p class="discret">Émises par le personnel, visées par le responsable. Ici : contrôle de conformité, bordereau au DAF, paiement par la caisse (avance à justifier),
+      justification sous 48 heures, retour de la monnaie.</p></div></div>
+    <div class="panneau"><div class="onglets" role="tablist">${onglets.map(([k, l, n]) => `<button role="tab" data-onglet="${k}" aria-selected="${k === onglet}">${esc(l)}${n ? ` (${n})` : ""}</button>`).join("")}</div>
+    <div id="zone"></div></div>`;
+  const zone = $("#zone");
+  const tableau = (liste, action, coche) => `<div class="defil"><table><thead><tr>${coche ? `<th><input type="checkbox" id="fb-tout" aria-label="Tout cocher" checked></th>` : ""}<th>N°</th><th>Date</th><th>Bénéficiaire</th><th>Objet</th><th class="montant">Montant</th><th>Statut</th><th></th></tr></thead><tbody>
+    ${liste.map(f => `<tr>${coche ? `<td><input type="checkbox" data-coche="${f.id}" checked aria-label="${esc(f.numero)}"></td>` : ""}<td class="code">${esc(f.numero)}</td><td class="code">${esc(quand(f.created_at))}</td>
+      <td>${esc(f.beneficiaire)}<div class="discret petit">${esc(f.emploi || "")}</div></td>
+      <td><b>${esc(f.objet)}</b>${f.urgence === "Urgente" ? ` <span class="pastille alerte">urgent</span>` : ""}${f.categorie ? `<div class="discret petit">${esc(f.categorie)}</div>` : ""}</td>
+      <td class="montant">${fcfa(montantFiche(f))}</td><td>${pastilleFiche(f)}</td>
+      <td><div class="actions-ligne"><button class="btn" data-fbv="${f.id}">Voir</button>${action ? action(f) : ""}</div></td></tr>`).join("")
+      || `<tr><td colspan="${coche ? 8 : 7}" class="vide">Aucune fiche.</td></tr>`}</tbody>
+    ${liste.length ? `<tfoot><tr><td colspan="${coche ? 5 : 4}">Total</td><td class="montant">${fcfa(liste.reduce((t, f) => t + Number(montantFiche(f) || 0), 0))}</td><td colspan="2"></td></tr></tfoot>` : ""}</table></div>`;
+  const fiche = id => fiches.find(f => f.id === id);
+  const vues = {
+    controle: () => { zone.innerHTML = tableau(par("Visée"), f => ctrl ? `<button class="btn btn-principal" data-ctrl="${f.id}">Contrôler</button>` : ""); },
+    bordereau: () => {
+      const l = par("Contrôlée");
+      zone.innerHTML = `${ctrl && l.length ? `<div class="outils"><button class="btn btn-principal" id="b-bord">Établir le bordereau des fiches cochées</button>
+        <span class="discret petit">Le bordereau part au DAF, qui valide ou refuse chaque fiche.</span></div>` : ""}${tableau(l, null, ctrl && l.length)}`;
+      if ($("#fb-tout")) $("#fb-tout").onchange = e => $$("[data-coche]").forEach(c => { c.checked = e.target.checked; });
+      if ($("#b-bord")) $("#b-bord").onclick = async () => {
+        const ids = $$("[data-coche]").filter(c => c.checked).map(c => c.dataset.coche);
+        if (!ids.length) return toast("Cochez au moins une fiche.", true);
+        try { await appeler("creer_bordereau_besoins", { p_fiches: ids }); toast("Bordereau transmis au DAF."); recharger(); } catch (err) { toast(messageErreur(err), true); }
+      };
+    },
+    daf: () => {
+      zone.innerHTML = `<div class="defil"><table><thead><tr><th>Bordereau</th><th>Établi le</th><th>Par</th><th class="montant">Fiches</th><th class="montant">Montant</th><th>Statut</th><th></th></tr></thead><tbody>
+        ${bordereaux.map(b => { const fs_ = fiches.filter(f => f.bordereau_id === b.id); return `<tr><td class="code">${esc(b.numero)}</td><td class="code">${esc(quand(b.cree_le))}</td>
+          <td>${esc(nomProfil(b.cree_par))}</td><td class="montant">${fs_.length}</td><td class="montant">${fcfa(fs_.reduce((t, f) => t + Number(f.montant_valide || 0), 0))}</td>
+          <td><span class="pastille ${b.statut === "Envoyé" ? "attente" : "ok"}">${b.statut === "Envoyé" ? "Au DAF" : "Traité"}</span></td>
+          <td><div class="actions-ligne">${daf && b.statut === "Envoyé" ? `<button class="btn btn-principal" data-dec="${b.id}">Décider</button>` : ""}<button class="btn" data-imp="${b.id}">Imprimer</button></div></td></tr>`; }).join("")
+          || `<tr><td colspan="7" class="vide">Aucun bordereau.</td></tr>`}</tbody></table></div>`;
+      const bord = id => bordereaux.find(b => b.id === id), contenu = id => fiches.filter(f => f.bordereau_id === id);
+      $$("[data-dec]").forEach(x => x.onclick = () => formulaireDecisionBordereau(bord(x.dataset.dec), contenu(x.dataset.dec).filter(f => f.statut === "Au DAF"), recharger));
+      $$("[data-imp]").forEach(x => x.onclick = () => imprimerBordereau(bord(x.dataset.imp), contenu(x.dataset.imp)));
+    },
+    payer: () => { zone.innerHTML = tableau(par("Validée"), f => caisse ? `<button class="btn btn-principal" data-payer="${f.id}">Payer</button>` : ""); },
+    justif: () => { zone.innerHTML = tableau([...par("Justifiée"), ...par("Payée").sort((a, b) => (b.en_retard ? 1 : 0) - (a.en_retard ? 1 : 0))],
+      f => ctrl && f.statut === "Justifiée" ? `<button class="btn btn-principal" data-jc="${f.id}">Contrôler</button>` : ""); },
+    monnaie: () => { zone.innerHTML = tableau(par("Monnaie à rendre"), f => caisse ? `<button class="btn btn-principal" data-rec="${f.id}">Recevoir ${fcfa(f.montant_paye - f.justif_montant)}</button>` : ""); },
+    toutes: () => { zone.innerHTML = tableau(fiches); }
+  };
+  const afficher = () => {
+    vues[onglet]();
+    $$("[data-fbv]", zone).forEach(b => b.onclick = () => voirFicheBesoin(fiche(b.dataset.fbv)));
+    $$("[data-ctrl]", zone).forEach(b => b.onclick = () => formulaireControleFiche(fiche(b.dataset.ctrl), recharger));
+    $$("[data-payer]", zone).forEach(b => b.onclick = () => formulaireCaisseFiche(fiche(b.dataset.payer), false, recharger));
+    $$("[data-rec]", zone).forEach(b => b.onclick = () => formulaireCaisseFiche(fiche(b.dataset.rec), true, recharger));
+    $$("[data-jc]", zone).forEach(b => b.onclick = () => formulaireControleJustification(fiche(b.dataset.jc), recharger));
+  };
+  $$("[data-onglet]").forEach(b => b.onclick = () => { onglet = etat.ongletBesoins = b.dataset.onglet; $$("[data-onglet]").forEach(x => x.setAttribute("aria-selected", String(x === b))); afficher(); });
+  afficher();
+}
+
 const PAGES_FINANCES = {
   personnel: pagePersonnel,
   mon_dossier: () => pageMonEspace("dossier"), mes_conges: () => pageMonEspace("conges"), mes_bulletins: () => pageMonEspace("bulletins"),
   mes_demandes: () => pageMonEspace("demandes"), mes_evaluations: () => pageMonEspace("evaluations"), mon_equipe: pageMonEquipe,
+  mes_besoins: () => pageMonEspace("besoins"), fiches_besoin: pageFichesBesoin,
   demandes_personnel: pageDemandesPersonnel, evaluations: pageEvaluations,
   etalements: pageEtalements,
   tableau_de_bord: pageTableauDeBord, etats: pageEtats, analytique: pageAnalytique, budget: pageBudget,
@@ -7554,6 +7895,11 @@ const compterJoursOuvrables = (a, b) => { if (!a || !b || b < a) return 0; let n
 
 async function chargerMonEspace() {
   try { etat.monEspace = await appeler("mon_espace"); } catch (e) { etat.monEspace = null; }
+  // Fiches de besoin : les siennes (à justifier, à corriger) et celles de l'équipe à viser.
+  etat.mesFiches = []; etat.fichesEquipe = [];
+  if (etat.monEspace) try {
+    [etat.mesFiches, etat.fichesEquipe] = await Promise.all([appeler("mes_fiches_besoin"), etat.monEspace.equipe.length ? appeler("equipe_fiches_besoin") : []]);
+  } catch (e) { /* lot 11 absent */ }
   return etat.monEspace;
 }
 
@@ -7567,6 +7913,14 @@ function rappelsEspace() {
   if (r.demandes_a_viser) pts.push({ texte: `<b>${r.demandes_a_viser} demande(s) de votre équipe</b> (formation, avance) attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
   if (r.evaluations_a_faire) pts.push({ texte: `<b>${r.evaluations_a_faire} évaluation(s) annuelle(s)</b> de votre équipe sont à conduire.`, page: "mon_equipe", bouton: "Évaluer" });
   if (r.reponses) pts.push({ texte: `<b>${r.reponses} réponse(s)</b> à vos demandes ces 7 derniers jours.`, page: "mes_demandes", bouton: "Voir" });
+  const mf = etat.mesFiches || [], aJust = mf.filter(f => f.statut === "Payée");
+  if (aJust.length) pts.push({ texte: `<b>${aJust.length} fiche(s) de besoin payée(s)</b> à justifier${aJust.some(f => f.en_retard) ? " — délai de 48 heures dépassé" : " sous 48 heures"} : photo du reçu et montant dépensé.`, page: "mes_besoins", bouton: "Justifier" });
+  const aCorr = mf.filter(f => f.statut === "À corriger").length;
+  if (aCorr) pts.push({ texte: `<b>${aCorr} fiche(s) de besoin</b> vous sont renvoyées pour correction.`, page: "mes_besoins", bouton: "Corriger" });
+  const aRetirer = mf.filter(f => f.statut === "Validée").length;
+  if (aRetirer) pts.push({ texte: `<b>${aRetirer} fiche(s) de besoin validée(s)</b> : présentez-vous à la caisse.`, page: "mes_besoins", bouton: "Voir" });
+  const aViser = (etat.fichesEquipe || []).filter(f => f.statut === "Soumise").length;
+  if (aViser) pts.push({ texte: `<b>${aViser} fiche(s) de besoin de votre équipe</b> attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
   return pts;
 }
 
@@ -7576,7 +7930,7 @@ async function pageMonEspace(vue) {
   if (!m) { $("#contenu").innerHTML = `<div class="vide">Votre compte n'est relié à aucune fiche du personnel. Adressez-vous à la RH.</div>`; return; }
   majCloche();
   const s = m.salarie;
-  const titre = { dossier: "Mon dossier", conges: "Mes congés", bulletins: "Mes bulletins de paie", demandes: "Mes demandes", evaluations: "Mes évaluations" }[vue];
+  const titre = { dossier: "Mon dossier", conges: "Mes congés", bulletins: "Mes bulletins de paie", demandes: "Mes demandes", evaluations: "Mes évaluations", besoins: "Mes fiches de besoin" }[vue];
   const rappels = rappelsEspace().filter(p => !p.page.startsWith("mon_equipe") || vue === "dossier");
   $("#contenu").innerHTML = `<div class="entete-page"><div><h1>${esc(titre)}</h1>
       <p class="discret">${esc(nomPersonne(s))} · ${esc(s.matricule)} · ${esc(s.emploi || "")}${m.manager ? ` · responsable : ${esc(nomPersonne(m.manager))}` : ""}</p></div>
@@ -7591,6 +7945,7 @@ async function pageMonEspace(vue) {
   if (vue === "bulletins") return vueMesBulletins(m, zone);
   if (vue === "demandes") return vueMesDemandes(m, zone, actions);
   if (vue === "evaluations") return vueMesEvaluations(m, zone);
+  if (vue === "besoins") return vueMesBesoins(zone, actions);
 }
 
 async function vueMonDossier(m, zone, actions) {
@@ -7880,12 +8235,19 @@ async function pageMonEquipe() {
         <td><span class="pastille ${CLASSE_DEMANDE[d.statut] || ""}">${esc(statutDemande(d))}</span></td>
         <td>${d.statut === "Demandée" ? `<div class="actions-ligne"><button class="btn btn-principal" data-vd="${d.id}" data-f="1">Favorable</button><button class="btn" data-vd="${d.id}" data-f="">Défavorable</button></div>` : ""}</td></tr>`; }).join("")
         || `<tr><td colspan="4" class="vide">Aucune demande.</td></tr>`}</tbody></table></div>
+    <h2 class="titre-section">Fiches de besoin</h2><div class="panneau defil"><table><thead><tr><th>Salarié</th><th>Fiche</th><th class="montant">Montant</th><th>Statut</th><th></th></tr></thead><tbody>
+      ${(etat.fichesEquipe || []).map(f => `<tr><td>${esc(f.beneficiaire)}</td><td><b>${esc(f.objet)}</b> <span class="discret petit">${esc(f.numero)}</span>${f.motif ? `<div class="discret petit">${esc(f.motif)}</div>` : ""}</td>
+        <td class="montant">${fcfa(f.montant)}</td><td>${pastilleFiche(f)}</td>
+        <td><div class="actions-ligne"><button class="btn" data-fbv="${f.id}">Voir</button>${f.statut === "Soumise" ? `<button class="btn btn-principal" data-vf="${f.id}" data-f="1">Favorable</button><button class="btn" data-vf="${f.id}" data-f="">Défavorable</button>` : ""}</div></td></tr>`).join("")
+        || `<tr><td colspan="5" class="vide">Aucune fiche de besoin.</td></tr>`}</tbody></table></div>
     <h2 class="titre-section">Évaluations annuelles</h2><div class="panneau defil"><table><thead><tr><th>Année</th><th>Salarié</th><th>Statut</th><th></th></tr></thead><tbody>
       ${aConduire.map(x => `<tr><td>${x.evaluation.annee}</td><td>${esc(x.nom)}</td><td><span class="pastille ${CLASSE_EVAL[x.evaluation.statut] || ""}">${esc(x.evaluation.statut)}</span></td>
         <td><button class="btn${["Ouverte", "Auto-évaluée"].includes(x.evaluation.statut) ? " btn-principal" : ""}" data-ev="${x.evaluation.id}">${["Ouverte", "Auto-évaluée"].includes(x.evaluation.statut) ? "Évaluer" : "Voir"}</button></td></tr>`).join("")
         || `<tr><td colspan="4" class="vide">Aucune évaluation à conduire.</td></tr>`}</tbody></table></div>`;
   $$("[data-vc]").forEach(b => b.onclick = avis("viser_conge", b.dataset.vc, !!b.dataset.f));
   $$("[data-vd]").forEach(b => b.onclick = avis("viser_demande", b.dataset.vd, !!b.dataset.f));
+  $$("[data-vf]").forEach(b => b.onclick = avis("viser_fiche_besoin", b.dataset.vf, !!b.dataset.f));
+  $$("[data-fbv]").forEach(b => b.onclick = () => voirFicheBesoin(etat.fichesEquipe.find(f => f.id === b.dataset.fbv)));
   $$("[data-ev]").forEach(b => b.onclick = () => formulaireEvaluation(aConduire.find(x => x.evaluation.id === b.dataset.ev), recharger));
 }
 
