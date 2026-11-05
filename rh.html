@@ -6985,9 +6985,11 @@ function detailFicheHtml(f) {
       <tfoot><tr><td colspan="3">Total demandé</td><td class="montant">${fcfa(f.montant)}</td></tr></tfoot></table></div>
     <h3 style="margin:1rem 0 .3rem">Étapes</h3><ul class="points">${etapes.map(([l, d, c]) => `<li><p><b>${esc(l)}</b>${d ? ` <span class="discret petit">· ${esc(quand(d))}</span>` : ""}${c ? `<br><span class="petit">${esc(c)}</span>` : ""}</p></li>`).join("")}</ul>
     ${f.refus_motif ? `<div class="erreur">${esc(f.refus_motif)}</div>` : ""}
-    ${(f.justif_pieces || []).length ? `<p>${f.justif_pieces.map((p, i) => `<button type="button" class="btn" data-piece="${esc(p)}">Pièce ${i + 1}</button>`).join(" ")}</p>` : ""}`;
+    ${(f.justif_pieces || []).length ? `<p>${f.justif_pieces.map((p, i) => `<button type="button" class="btn" data-piece="${esc(p)}">Reçu ${i + 1}</button>`).join(" ")}</p>` : ""}
+    ${f.piece_en_cours ? `<p><button type="button" class="btn" data-pc="${f.piece_en_cours}">Pièce de caisse ${esc(f.piece_numero)}${f.piece_statut === "À signer" ? " (à signer)" : ""}</button></p>` : ""}`;
 }
-const brancherPieces = () => $$("[data-piece]").forEach(b => b.onclick = () => voirJustificatif(b.dataset.piece));
+const brancherPieces = () => { $$("[data-piece]").forEach(b => b.onclick = () => voirJustificatif(b.dataset.piece));
+  $$("[data-pc]").forEach(b => b.onclick = () => imprimerPieceCaisse(b.dataset.pc)); };
 function voirFicheBesoin(f) {
   ouvrirModale(`Fiche de besoin ${f.numero}`, detailFicheHtml(f), { large: true });
   brancherPieces();
@@ -7070,6 +7072,7 @@ async function vueMesBesoins(zone, actions) {
         ${f.statut === "Payée" && f.justif_commentaire ? `<br><span class="petit">Justification à reprendre : ${esc(f.justif_commentaire)}</span>` : ""}
         ${f.statut === "Monnaie à rendre" ? `<br><span class="petit">Rendez ${fcfa(f.montant_paye - f.justif_montant)} FCFA à la caisse.</span>` : ""}</p>
       <div class="actions-ligne"><button class="btn" data-voir="${f.id}">Voir</button>
+        ${f.statut === "Validée" && f.piece_statut === "À signer" ? `<button class="btn btn-principal" data-signer="${f.piece_en_cours}">Signer la pièce de caisse</button>` : ""}
         ${f.statut === "Payée" ? `<button class="btn btn-principal" data-justif="${f.id}">Justifier</button>` : ""}
         ${f.statut === "À corriger" ? `<button class="btn btn-principal" data-corr="${f.id}">Corriger</button>` : ""}
         ${["Soumise", "Visée", "À corriger"].includes(f.statut) ? `<button class="btn" data-ann="${f.id}">Annuler</button>` : ""}</div></li>`).join("")
@@ -7078,11 +7081,83 @@ async function vueMesBesoins(zone, actions) {
   $("#b-fb").onclick = () => formulaireFicheBesoin(null, recharger);
   $$("[data-voir]").forEach(b => b.onclick = () => voirFicheBesoin(fiche(b.dataset.voir)));
   $$("[data-justif]").forEach(b => b.onclick = () => formulaireJustification(fiche(b.dataset.justif), recharger));
+  $$("[data-signer]").forEach(b => b.onclick = () => formulaireSignaturePiece(b.dataset.signer, false, recharger));
   $$("[data-corr]").forEach(b => b.onclick = () => formulaireFicheBesoin(fiche(b.dataset.corr), recharger));
   $$("[data-ann]").forEach(b => b.onclick = async () => {
     if (!confirm("Annuler cette fiche de besoin ?")) return;
     try { await appeler("annuler_ma_fiche_besoin", { p_id: b.dataset.ann }); toast("Fiche annulée."); recharger(); } catch (err) { toast(messageErreur(err), true); }
   });
+}
+
+/* ---------- Signature au doigt et pièce de caisse ---------- */
+// Zone de signature : tracé au doigt ou à la souris, gardé en PNG dans la pièce.
+const champSignature = (id, libelle) => `<label for="${id}">${esc(libelle)}</label>
+  <canvas id="${id}" width="600" height="200" style="display:block;width:100%;max-width:520px;height:160px;border:1.5px dashed #9AA6B5;border-radius:8px;background:#fff;touch-action:none;cursor:crosshair"></canvas>
+  <button type="button" class="btn-lien" data-effacer="${id}">Effacer et recommencer</button>`;
+function brancherSignature(id) {
+  const c = $("#" + id), ctx = c.getContext("2d");
+  ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#16202E";
+  let trace = false; c.vide = true;
+  const pos = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+  c.onpointerdown = e => { trace = true; c.setPointerCapture(e.pointerId); const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); };
+  c.onpointermove = e => { if (!trace) return; const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); c.vide = false; };
+  c.onpointerup = c.onpointercancel = () => { trace = false; };
+  $(`[data-effacer="${id}"]`).onclick = () => { ctx.clearRect(0, 0, c.width, c.height); c.vide = true; };
+}
+const signatureDe = id => { const c = $("#" + id); return c && !c.vide ? c.toDataURL("image/png") : null; };
+const quandHeure = d => d ? new Date(d).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "";
+
+async function imprimerPieceCaisse(id) {
+  let p; try { p = await appeler("lire_piece_caisse", { p_piece: id }); } catch (err) { return toast(messageErreur(err), true); }
+  if (!p) return toast("Pièce de caisse introuvable.", true);
+  const bloc = (titre, img, nom, quand, mention) => `<td style="width:50%;vertical-align:top"><b>${esc(titre)}</b><br>
+    ${img ? `<img src="${img}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">` : `<div style="height:70px;color:#B42318">Pas encore signée</div>`}
+    <span>${esc(nom || "")}</span><br><span class="discret">${quand ? "Signé électroniquement le " + esc(quandHeure(quand)) : ""}${mention ? "<br>" + esc(mention) : ""}</span></td>`;
+  imprimerHtml(`Pièce de caisse ${p.numero}`, `<h1>Pièce de caisse — sortie n° ${esc(p.numero)}</h1>
+    <p class="discret">${esc(p.caisse)} · ${esc(dateLongue(p.date_piece))}${p.statut === "Annulée" ? " · ANNULÉE" : p.statut === "À signer" ? " · en attente de la signature du bénéficiaire" : ""}</p>
+    <table><tr><th style="width:30%">Bénéficiaire</th><td>${esc(p.beneficiaire)} (${esc(p.matricule)})${p.emploi ? " · " + esc(p.emploi) : ""}</td></tr>
+      <tr><th>Objet</th><td>${esc(p.objet)} — fiche de besoin ${esc(p.fiche_numero)}</td></tr>
+      <tr><th>Montant</th><td><b style="font-size:1.1rem">${fcfa(p.montant)} FCFA</b><br>${esc(enLettres(p.montant))} francs CFA</td></tr>
+      <tr><th>Nature</th><td>Avance à justifier sous 48 heures (reçus et monnaie)</td></tr></table>
+    <table style="margin-top:1rem"><tr>${bloc("Remis par (caisse)", p.signature_caissier, p.caissier, p.signe_caissier_le)}
+      ${bloc("Reçu par (bénéficiaire)", p.signature_beneficiaire, p.beneficiaire, p.signe_beneficiaire_le,
+        p.mode_signature === "Guichet" ? "Signée au guichet, sur l'écran de la caisse (" + (p.signataire || "") + ")" : p.mode_signature === "Application" ? "Signée depuis son compte personnel" : "")}</tr></table>`);
+}
+
+// La caisse prépare et signe la pièce ; ensuite le bénéficiaire signe (son téléphone, ou au guichet).
+function formulairePieceCaisse(f, retour) {
+  ouvrirModale(`Pièce de caisse — fiche ${f.numero}`, `<p><b>${fcfa(f.montant_valide)} FCFA</b> à remettre à <b>${esc(f.beneficiaire)}</b> · ${esc(f.objet)}</p>
+    <div class="grille2"><div><label for="p-cpt">Caisse *</label><select id="p-cpt">${optionsCaisses()}</select></div>
+      <div><label for="p-date">Date</label><input type="date" id="p-date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
+    ${champSignature("sig-caisse", "Votre signature (caisse) *")}
+    <p class="discret petit">La pièce part ensuite à la signature du bénéficiaire, sur son téléphone ou ici au guichet. La sortie de caisse n'est enregistrée qu'à sa signature.</p>`, {
+    libelleSave: "Signer et préparer la pièce",
+    onSave: async () => {
+      if (!$("#p-cpt").value) return "Choisissez la caisse.";
+      const sig = signatureDe("sig-caisse"); if (!sig) return "Signez la pièce de caisse.";
+      let id; try { id = await appeler("preparer_piece_caisse", { p_fiche: f.id, p_compte: $("#p-cpt").value, p_signature: sig, p_date: $("#p-date").value || null }); }
+      catch (err) { return messageErreur(err); }
+      toast("Pièce préparée : elle attend la signature du bénéficiaire.");
+      setTimeout(() => { if (confirm(`Le bénéficiaire est-il au guichet pour signer maintenant ?\n(Sinon, il signera depuis son téléphone, dans « Mes fiches de besoin ».)`)) formulaireSignaturePiece(id, true, retour); else retour(); }, 50);
+    }
+  });
+  brancherSignature("sig-caisse");
+}
+
+async function formulaireSignaturePiece(id, guichet, retour) {
+  let p; try { p = await appeler("lire_piece_caisse", { p_piece: id }); } catch (err) { return toast(messageErreur(err), true); }
+  ouvrirModale(`Signer la pièce de caisse ${p.numero}`, `<p>${guichet ? `<b>${esc(p.beneficiaire)}</b> signe ici, au guichet. ` : ""}Je reconnais recevoir de la caisse
+      <b>${fcfa(p.montant)} FCFA</b> (${esc(enLettres(p.montant))} francs CFA) pour « ${esc(p.objet)} », à justifier sous 48 heures par les reçus et la monnaie.</p>
+    <p class="discret petit">Remis par ${esc(p.caissier)} — ${esc(p.caisse)}.</p>
+    ${champSignature("sig-benef", guichet ? "Signature du bénéficiaire *" : "Votre signature *")}`, {
+    libelleSave: "Signer et recevoir",
+    onSave: async () => {
+      const sig = signatureDe("sig-benef"); if (!sig) return "Signez la pièce de caisse.";
+      try { await appeler("signer_piece_caisse", { p_piece: id, p_signature: sig, p_guichet: !!guichet }); } catch (err) { return messageErreur(err); }
+      toast("Pièce signée : la sortie de caisse est enregistrée."); retour();
+    }
+  });
+  brancherSignature("sig-benef");
 }
 
 /* ---------- Direction financière, DAF, caisse ---------- */
@@ -7145,6 +7220,7 @@ function imprimerBordereau(b, fiches) {
     <table style="margin-top:1.5rem;border:none;width:70%"><tr><td style="border:none">Le contrôleur</td><td style="border:none">Visa du DAF</td></tr></table>`);
 }
 
+// Retour de la monnaie (le paiement passe par la pièce de caisse signée).
 function formulaireCaisseFiche(f, recevoir, retour) {
   const montant = recevoir ? f.montant_paye - f.justif_montant : f.montant_valide;
   ouvrirModale(`${recevoir ? "Recevoir la monnaie" : "Payer"} — fiche ${f.numero}`, `<p><b>${fcfa(montant)} FCFA</b> ${recevoir ? "rendus par" : "à remettre à"} <b>${esc(f.beneficiaire)}</b> · ${esc(f.objet)}</p>
@@ -7231,7 +7307,10 @@ async function pageFichesBesoin() {
       $$("[data-dec]").forEach(x => x.onclick = () => formulaireDecisionBordereau(bord(x.dataset.dec), contenu(x.dataset.dec).filter(f => f.statut === "Au DAF"), recharger));
       $$("[data-imp]").forEach(x => x.onclick = () => imprimerBordereau(bord(x.dataset.imp), contenu(x.dataset.imp)));
     },
-    payer: () => { zone.innerHTML = tableau(par("Validée"), f => caisse ? `<button class="btn btn-principal" data-payer="${f.id}">Payer</button>` : ""); },
+    payer: () => { zone.innerHTML = tableau(par("Validée"), f => !caisse ? "" : f.piece_statut === "À signer"
+      ? `<span class="pastille attente">Pièce ${esc(f.piece_numero)} à signer</span><button class="btn btn-principal" data-guichet="${f.piece_en_cours}">Faire signer au guichet</button>
+         <button class="btn" data-pc="${f.piece_en_cours}">Pièce</button><button class="btn" data-annpc="${f.piece_en_cours}">Annuler la pièce</button>`
+      : `<button class="btn btn-principal" data-payer="${f.id}">Pièce de caisse</button>`); },
     justif: () => { zone.innerHTML = tableau([...par("Justifiée"), ...par("Payée").sort((a, b) => (b.en_retard ? 1 : 0) - (a.en_retard ? 1 : 0))],
       f => ctrl && f.statut === "Justifiée" ? `<button class="btn btn-principal" data-jc="${f.id}">Contrôler</button>` : ""); },
     monnaie: () => { zone.innerHTML = tableau(par("Monnaie à rendre"), f => caisse ? `<button class="btn btn-principal" data-rec="${f.id}">Recevoir ${fcfa(f.montant_paye - f.justif_montant)}</button>` : ""); },
@@ -7241,7 +7320,13 @@ async function pageFichesBesoin() {
     vues[onglet]();
     $$("[data-fbv]", zone).forEach(b => b.onclick = () => voirFicheBesoin(fiche(b.dataset.fbv)));
     $$("[data-ctrl]", zone).forEach(b => b.onclick = () => formulaireControleFiche(fiche(b.dataset.ctrl), recharger));
-    $$("[data-payer]", zone).forEach(b => b.onclick = () => formulaireCaisseFiche(fiche(b.dataset.payer), false, recharger));
+    $$("[data-payer]", zone).forEach(b => b.onclick = () => formulairePieceCaisse(fiche(b.dataset.payer), recharger));
+    $$("[data-guichet]", zone).forEach(b => b.onclick = () => formulaireSignaturePiece(b.dataset.guichet, true, recharger));
+    $$("[data-pc]", zone).forEach(b => b.onclick = () => imprimerPieceCaisse(b.dataset.pc));
+    $$("[data-annpc]", zone).forEach(b => b.onclick = async () => {
+      const motif = prompt("Motif de l'annulation de la pièce :"); if (!motif) return;
+      try { await appeler("annuler_piece_caisse", { p_piece: b.dataset.annpc, p_motif: motif }); toast("Pièce annulée."); recharger(); } catch (err) { toast(messageErreur(err), true); }
+    });
     $$("[data-rec]", zone).forEach(b => b.onclick = () => formulaireCaisseFiche(fiche(b.dataset.rec), true, recharger));
     $$("[data-jc]", zone).forEach(b => b.onclick = () => formulaireControleJustification(fiche(b.dataset.jc), recharger));
   };
@@ -7918,7 +8003,8 @@ function rappelsEspace() {
   if (aJust.length) pts.push({ texte: `<b>${aJust.length} fiche(s) de besoin payée(s)</b> à justifier${aJust.some(f => f.en_retard) ? " — délai de 48 heures dépassé" : " sous 48 heures"} : photo du reçu et montant dépensé.`, page: "mes_besoins", bouton: "Justifier" });
   const aCorr = mf.filter(f => f.statut === "À corriger").length;
   if (aCorr) pts.push({ texte: `<b>${aCorr} fiche(s) de besoin</b> vous sont renvoyées pour correction.`, page: "mes_besoins", bouton: "Corriger" });
-  const aRetirer = mf.filter(f => f.statut === "Validée").length;
+  const aSigner = mf.filter(f => f.statut === "Validée" && f.piece_statut === "À signer").length, aRetirer = mf.filter(f => f.statut === "Validée").length - aSigner;
+  if (aSigner) pts.push({ texte: `<b>${aSigner} pièce(s) de caisse</b> attendent votre signature pour que l'argent vous soit remis.`, page: "mes_besoins", bouton: "Signer" });
   if (aRetirer) pts.push({ texte: `<b>${aRetirer} fiche(s) de besoin validée(s)</b> : présentez-vous à la caisse.`, page: "mes_besoins", bouton: "Voir" });
   const aViser = (etat.fichesEquipe || []).filter(f => f.statut === "Soumise").length;
   if (aViser) pts.push({ texte: `<b>${aViser} fiche(s) de besoin de votre équipe</b> attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
