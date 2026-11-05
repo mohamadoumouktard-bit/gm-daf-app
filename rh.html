@@ -296,6 +296,32 @@ svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
   .barre,.barre-haut,.actions-ligne,#toast,.outils{display:none!important}
   .coque,.principal{display:block;height:auto}.contenu{overflow:visible;padding:0}.panneau,.carte-form{border:none}
 }
+/* Fiche de besoin */
+.fb-section{border:1px solid #E3E8EF;border-radius:12px;padding:.9rem 1rem;margin:.8rem 0;background:#fff}
+.fb-section>h3{margin:0 0 .65rem;font-size:.74rem;letter-spacing:.07em;text-transform:uppercase;color:#2F5395}
+.fb-ident{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.55rem .9rem}
+.fb-ident>div>small{display:block;color:#5A6675;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+.fb-ident>div>b{font-weight:600}
+.fb-pills{display:flex;gap:.5rem;flex-wrap:wrap}
+.fb-pills label{position:relative;border:1.5px solid #C3CCD8;border-radius:999px;padding:.32rem .95rem;cursor:pointer;font-weight:600;margin:0;font-size:.9rem}
+.fb-pills input{position:absolute;opacity:0;pointer-events:none}
+.fb-pills label:has(input:checked){background:#2F5395;color:#fff;border-color:#2F5395}
+.fb-pills label.urgent:has(input:checked){background:#B42318;border-color:#B42318}
+.fb-total{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;background:#F4F7FB;border-radius:10px;padding:.7rem 1rem;margin-top:.7rem}
+.fb-total b{font-size:1.4rem;white-space:nowrap}
+.fb-total small{color:#5A6675;display:block}
+.fb-tete{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start;padding-bottom:.6rem;border-bottom:2px solid #2F5395;margin-bottom:.4rem}
+.fb-tete .fb-montant{font-size:1.55rem;font-weight:700;white-space:nowrap;text-align:right}
+.fb-tete .fb-montant small{display:block;font-size:.75rem;font-weight:400;color:#5A6675}
+.fb-etapes{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.3rem}
+.fb-etapes li{display:flex;align-items:center;gap:.3rem;font-size:.78rem;border-radius:999px;padding:.22rem .65rem;background:#EEF2F7;color:#5A6675}
+.fb-etapes li.fait{background:#E7F5EC;color:#1E7B45}.fb-etapes li.encours{background:#FFF4E0;color:#9A5B00;font-weight:600}.fb-etapes li.refus{background:#FDECEC;color:#B42318;font-weight:600}
+.fb-journal{list-style:none;margin:0;padding:0}
+.fb-journal li{border-left:3px solid #C3CCD8;padding:.15rem 0 .55rem .75rem;margin-left:.2rem}
+.fb-journal li b{display:block}.fb-journal li small{color:#5A6675}
+.fb-articles td,.fb-articles th{padding:.35rem .5rem}
+.fb-section input[type=text],.fb-section input:not([type]),.fb-section textarea,.fb-section select{width:100%;box-sizing:border-box}
+.fb-articles .fb-des{width:100%;min-width:12rem;box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -324,8 +350,8 @@ const adresseRetour = () => CONFIG.URL_APPLICATION || location.origin + location
 const APP = window.GM_APP === "rh" ? "rh" : "daf";
 const NOM_APP = APP === "rh" ? "Guest Markets RH" : "Guest Markets Management";
 const PAGES_RH = new Set(["accueil", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_besoins", "mes_evaluations", "mon_equipe",
-  "personnel", "paie", "conges", "demandes_personnel", "evaluations", "utilisateurs", "postes", "profil"]);
-const GROUPES_RH = new Set(["Mon espace", "Ressources humaines", "Administration", "Compte"]);
+  "personnel", "paie", "conges", "demandes_personnel", "evaluations", "utilisateurs", "postes", "profil", "departements"]);
+const GROUPES_RH = new Set(["Mon espace", "Ressources humaines", "Référentiels", "Administration", "Compte"]);
 const adresseApp = app => new URL((app === "rh" ? "rh.html" : "./") + location.search, location.href).href;
 
 /* =====================================================================
@@ -400,6 +426,7 @@ const libActivite = r => {
   return p ? `${p.libelle} — ${r.libelle}` : r.libelle;
 };
 
+const libellesDepartements = () => (etat.refs.departements || []).filter(d => d.actif !== false).map(d => d.libelle);
 const LISTES = {
   activites: { select: "id, code, libelle, parent_id, actif", ordre: "code", lib: libActivite },
   activites_principales: { table: "activites", select: "id, code, libelle, parent_id", ordre: "code", filtre: q => q.is("parent_id", null), lib: r => r.libelle },
@@ -408,6 +435,7 @@ const LISTES = {
   comptes_tresorerie_gl: { table: "plan_comptable", select: "numero, libelle, classe", ordre: "numero", cle: "numero",
     filtre: q => q.eq("classe", 5), lib: r => `${r.numero} – ${r.libelle}`, court: r => r.numero },
   sites: { select: "id, code, libelle, actif", ordre: "code", lib: r => `${r.libelle} (${r.code})` },
+  departements: { select: "id, code, libelle, actif", ordre: "libelle", lib: r => r.libelle },
   categories_produit: { select: "id, code, libelle, manager_id", ordre: "libelle", lib: r => r.libelle },
   fournisseurs: { select: "id, code, nom, actif", ordre: "nom", lib: r => `${r.nom} (${r.code})` },
   comptes_tresorerie: { select: "id, code, libelle, type, compte, actif", ordre: "code", lib: r => `${r.code} – ${r.libelle}` },
@@ -496,7 +524,7 @@ const ENTITES = {
       { k: "emploi", l: "Emploi occupé", liste: true },
       { k: "categorie", l: "Catégorie (convention collective)" },
       { k: "echelon", l: "Échelon" },
-      { k: "departement", l: "Département", liste: true },
+      { k: "departement", l: "Département", t: "select", get options() { return libellesDepartements(); }, liste: true, indice: "Liste tenue dans Référentiels › Départements." },
       { k: "activite_id", l: "Activité", t: "ref", liste_ref: "activites", vide: "Structure", indice: "Pour répartir la masse salariale par activité." },
       { k: "site_id", l: "Bureau ou site", t: "ref", liste_ref: "sites" },
       { k: "paye_par", l: "Salaire payé par", t: "select", options: ["Entreprise", "Guest Cameroun", "CEO"], defaut: "Entreprise",
@@ -586,6 +614,16 @@ const ENTITES = {
       { k: "libelle", l: "Intitulé", req: true, liste: true },
       { k: "classe", l: "Classe", liste: true, calcule: true },
       { k: "sens", l: "Sens normal du solde", t: "select", options: ["Débit", "Crédit", "Mixte"], liste: true },
+      { k: "actif", l: "Actif", t: "bool", liste: true, defaut: true }
+    ]
+  },
+  departements: {
+    table: "departements", titre: "Départements", singulier: "un département", ordre: "libelle",
+    ecriture: ["rh", "daf", "admin"],
+    aide: "Départements de l'entreprise : ils figurent sur la fiche du personnel et sur chaque fiche de besoin (département concerné). Désactivez plutôt que supprimer un département déjà utilisé.",
+    champs: [
+      { k: "code", l: "Code", req: true, liste: true },
+      { k: "libelle", l: "Libellé", req: true, liste: true },
       { k: "actif", l: "Actif", t: "bool", liste: true, defaut: true }
     ]
   },
@@ -714,6 +752,7 @@ const NAV = [
   { id: "plan_comptable", l: "Plan comptable", roles: TOUS },
   { id: "activites", l: "Activités", roles: TOUS },
   { id: "sites", l: "Bureaux et sites", roles: TOUS },
+  { id: "departements", l: "Départements", roles: TOUS },
   { id: "vehicules", l: "Véhicules", roles: TOUS },
   { id: "comptes_tresorerie", l: "Comptes de trésorerie", roles: FINANCE },
   { groupe: "Administration", roles: [...new Set([...GESTION, ...LECTEURS_JOURNAL, "dg"])] },
@@ -910,6 +949,7 @@ async function entrer(session) {
   if (error || !data || !data.actif) return ecranEnAttente();
   const demandee = location.hash.replace("#/", "");
   await chargerMonEspace();
+  try { await chargerListe("departements"); } catch (e) { etat.refs.departements = []; }
   if (appAttendue() !== APP) { location.replace(adresseApp(appAttendue()) + location.hash); return; }
   etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_dossier" : estLivreurSeul() ? "ma_tournee" : "accueil";
   rendreCoque();
@@ -1056,7 +1096,7 @@ const ICONE_PAGE = {
   categories_operation: "etiquette", plan_comptable: "liste", activites: "mallette", sites: "repere", vehicules: "voiture", comptes_tresorerie: "banque",
   parametres: "reglages", utilisateurs: "bouclier", postes: "mallette", journal: "historique", profil: "personne",
   mon_dossier: "personne", mes_conges: "calendrier", mes_bulletins: "billet", mes_demandes: "document", mes_evaluations: "cible", mon_equipe: "groupe",
-  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier"
+  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe"
 };
 const initiales = p => ((p.prenom || "").trim()[0] || "") + ((p.nom || "").trim()[0] || "") || (p.email || "?")[0];
 
@@ -1435,7 +1475,7 @@ function champFormulaire(ch, v, desactive = false, pref = "ch-") {
   const lib = `<label for="${id}">${esc(ch.l)}${ch.req ? " *" : ""}</label>`;
   if (ch.t === "bool") return `<label class="case"><input type="checkbox" id="${id}" ${v ? "checked" : ""}${dis}> ${esc(ch.l)}</label>`;
   if (ch.t === "textarea") return lib + `<textarea id="${id}"${dis}>${esc(v)}</textarea>`;
-  if (ch.t === "select") return lib + `<select id="${id}"${dis}${req}><option value="">—</option>${ch.options.map(o => {
+  if (ch.t === "select") return lib + `<select id="${id}"${dis}${req}><option value="">—</option>${[...ch.options, ...(v && !ch.options.some(o => String(typeof o === "object" ? o.v : o) === String(v)) ? [v] : [])].map(o => {
     const val = typeof o === "object" ? o.v : o, txt = typeof o === "object" ? o.l : o;
     return `<option value="${esc(val)}" ${String(val) === String(v ?? "") ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
   if (ch.t === "ref") return lib + `<select id="${id}"${dis}${req}><option value="">—</option>${(etat.refs[ch.liste_ref] || [])
@@ -6481,7 +6521,7 @@ function formulaireEmbauche() {
       <div><label for="em-date">Date d'entrée *</label><input type="date" id="em-date" value="${aujourdhui()}"></div>
       <div id="em-essai-bloc"><label for="em-essai">Période d'essai (mois)</label><input type="number" id="em-essai" min="0" max="6" value="3"></div>
       <div id="em-fin-bloc" hidden><label for="em-fin">Fin du contrat ou du stage</label><input type="date" id="em-fin"></div>
-      <div><label for="em-emploi">Emploi *</label><input type="text" id="em-emploi"></div><div><label for="em-dep">Département</label><input type="text" id="em-dep" placeholder="REX, SUPPLY CHAIN, ADMINISTRATION…"></div>
+      <div><label for="em-emploi">Emploi *</label><input type="text" id="em-emploi"></div><div><label for="em-dep">Département</label><select id="em-dep"><option value="">—</option>${libellesDepartements().map(d => `<option>${esc(d)}</option>`).join("")}</select></div>
       <div><label for="em-cat">Catégorie (convention)</label><input type="text" id="em-cat"></div>
       <div><label for="em-act">Activité</label><select id="em-act">${optionsRef("activites", null, undefined, "Structure")}</select></div></div>
     <h3>Rémunération</h3><div id="em-remu"><div class="grille2">
@@ -6582,7 +6622,9 @@ function formulaireEvenement(s, typeInitial, retour) {
     $("#ev-aide").textContent = aides[t] || "";
     $("#ev-details-lib").textContent = ["Demande d'explication", "Avertissement", "Blâme", "Mise à pied", "Suspension"].includes(t) ? "Faits reprochés *" : "Détails";
     const date = (id, l, v = "") => `<div><label for="ev-${id}">${l}</label><input type="date" id="ev-${id}" value="${esc(v)}"></div>`;
-    const texte = (id, l, v = "") => `<div><label for="ev-${id}">${l}</label><input type="text" id="ev-${id}" value="${esc(v || "")}"></div>`;
+    const texte = (id, l, v = "") => id === "departement"
+      ? `<div><label for="ev-${id}">${l}</label><select id="ev-${id}"><option value="">—</option>${[...new Set([...libellesDepartements(), ...(v ? [v] : [])])].map(d => `<option ${d === v ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>`
+      : `<div><label for="ev-${id}">${l}</label><input type="text" id="ev-${id}" value="${esc(v || "")}"></div>`;
     if (t === "Revalorisation") {
       const { data: fx } = await sb.from("elements_fixes").select("rubrique_code, montant").eq("salarie_id", s.id);
       c.innerHTML = `<div class="grille2">${date("effet", "Date d'effet *", ISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)))}
@@ -6968,27 +7010,75 @@ async function voirJustificatif(chemin) {
   window.open(data.signedUrl, "_blank", "noopener");
 }
 
-/* Détail d'une fiche : articles, étapes et commentaires, pièces jointes. */
-function detailFicheHtml(f) {
-  const etapes = [[`Émise par ${f.beneficiaire || "le salarié"}`, f.created_at, f.motif],
-    f.visa_le && [f.statut === "Refusée" && !f.controle_le ? "Avis défavorable du responsable" : "Visée par le responsable", f.visa_le, f.visa_commentaire],
-    f.controle_le && [f.statut === "À corriger" ? "Renvoyée pour correction" : f.montant_valide ? `Contrôlée : ${fcfa(f.montant_valide)} FCFA retenus${f.categorie ? " · " + f.categorie : ""}` : "Refusée au contrôle", f.controle_le, f.controle_commentaire],
-    f.bordereau && [`Transmise au DAF (bordereau ${f.bordereau})`, null, null],
-    f.decision_le && [f.decision_par && f.statut === "Refusée" ? "Refusée par le DAF" : "Validée par le DAF", f.decision_le, f.decision_commentaire],
-    f.paye_le && [`Payée : ${fcfa(f.montant_paye)} FCFA remis`, f.paye_le, null],
+/* Détail d'une fiche : en-tête, avancement, articles, journal des décisions, pièces. */
+const ETAPES_FICHE = [["Émise", ["Soumise"]], ["Visée", ["Visée", "À corriger"]], ["Contrôlée", ["Contrôlée"]], ["Validée DAF", ["Au DAF"]],
+  ["Payée", ["Validée"]], ["Justifiée", ["Payée", "Justifiée"]], ["Soldée", ["Monnaie à rendre"]]];
+function etapesFicheHtml(f) {
+  const ordre = ["Soumise", "Visée", "À corriger", "Contrôlée", "Au DAF", "Validée", "Payée", "Justifiée", "Monnaie à rendre", "Soldée"];
+  const ici = ordre.indexOf(f.statut);
+  return `<ol class="fb-etapes">${ETAPES_FICHE.map(([l, attente], k) => {
+    const pos = ordre.indexOf(attente[0]);
+    const cls = ["Refusée", "Annulée"].includes(f.statut) ? (k === 0 ? "fait" : "") : f.statut === "Soldée" || ici > ordre.indexOf(attente[attente.length - 1]) ? "fait" : attente.includes(f.statut) ? "encours" : "";
+    return `<li class="${cls}">${cls === "fait" ? "✓" : k + 1}. ${esc(l)}</li>`; }).join("")}
+    ${["Refusée", "Annulée"].includes(f.statut) ? `<li class="refus">${esc(f.statut)}</li>` : ""}</ol>`;
+}
+function journalFicheHtml(f) {
+  const lignes = [[`Émise par ${f.beneficiaire || "le salarié"}`, f.created_at, null],
+    f.visa_le && [f.statut === "Refusée" && !f.controle_le ? "Avis défavorable du responsable" : "Visée par le responsable", f.visa_le, f.visa_commentaire, f.visa_nom],
+    f.controle_le && [f.statut === "À corriger" ? "Renvoyée au salarié pour correction" : f.montant_valide ? `Contrôlée conforme : ${fcfa(f.montant_valide)} FCFA retenus${f.categorie ? " · " + f.categorie : ""}` : "Refusée au contrôle", f.controle_le, f.controle_commentaire, f.controle_nom],
+    f.bordereau && [`Transmise au DAF — bordereau ${f.bordereau}`, null, null],
+    f.decision_le && [f.statut === "Refusée" && !f.paye_le ? "Refusée par le DAF" : `Validée par le DAF${f.caisse ? " — payée par " + f.caisse : ""}`, f.decision_le, f.decision_commentaire, f.decision_nom],
+    f.paye_le && [`Payée : ${fcfa(f.montant_paye)} FCFA remis contre signature${f.piece_numero ? " (pièce " + f.piece_numero + ")" : ""}`, f.paye_le, null],
     f.justif_le && [`Justifiée : ${fcfa(f.justif_montant)} FCFA dépensés`, f.justif_le, f.justif_note],
-    f.justif_controle_le && ["Justification acceptée", f.justif_controle_le, f.justif_commentaire],
-    f.statut === "Payée" && f.justif_commentaire && !f.justif_controle_le && ["Justification à reprendre", null, f.justif_commentaire]].filter(Boolean);
-  return `<p>${pastilleFiche(f)} ${f.urgence === "Urgente" ? `<span class="pastille alerte">urgent</span>` : ""} <b>${esc(f.objet)}</b></p>
-    <div class="defil"><table><thead><tr><th>Article</th><th class="montant">Qté</th><th class="montant">Prix unitaire</th><th class="montant">Montant</th></tr></thead><tbody>
+    f.statut === "Payée" && f.justif_commentaire && !f.justif_controle_le && ["Justification à reprendre", null, f.justif_commentaire],
+    f.justif_controle_le && [`Justification acceptée${Number(f.montant_paye) > Number(f.justif_montant) ? ` — ${fcfa(f.montant_paye - f.justif_montant)} FCFA de monnaie à rendre` : ""}`, f.justif_controle_le, f.justif_commentaire]].filter(Boolean);
+  return `<ul class="fb-journal">${lignes.map(([l, d, c, qui]) => `<li><b>${esc(l)}</b><small>${[qui, d ? quandHeure(d) : ""].filter(Boolean).map(esc).join(" · ")}</small>${c ? `<div class="petit">« ${esc(c)} »</div>` : ""}</li>`).join("")}</ul>`;
+}
+function detailFicheHtml(f) {
+  etat.ficheAffichee = f;
+  return `<div class="fb-tete"><div><span class="discret petit">${esc(f.numero)} · émise le ${esc(quand(f.created_at))}</span>
+      <h3 style="margin:.15rem 0 .35rem;font-size:1.15rem">${esc(f.objet)}</h3>${pastilleFiche(f)} ${f.urgence === "Urgente" ? `<span class="pastille alerte">Urgent</span>` : ""}</div>
+    <div class="fb-montant">${fcfa(montantFiche(f))} FCFA<small>${f.montant_paye ? "remis" : f.montant_valide ? "retenu (demandé : " + fcfa(f.montant) + ")" : "demandé"}</small></div></div>
+    <div class="fb-section"><h3>Avancement</h3>${etapesFicheHtml(f)}</div>
+    <div class="fb-section"><h3>Demandeur</h3><div class="fb-ident">
+      <div><small>Nom</small><b>${esc(f.beneficiaire || "")}</b></div><div><small>Matricule</small><b>${esc(f.matricule || "")}</b></div>
+      <div><small>Emploi</small><b>${esc(f.emploi || "—")}</b></div><div><small>Département concerné</small><b>${esc(f.departement || "—")}</b></div>
+      ${f.caisse ? `<div><small>Caisse qui paie</small><b>${esc(f.caisse)}</b></div>` : ""}${f.categorie ? `<div><small>Imputation</small><b>${esc(f.categorie)}</b></div>` : ""}</div>
+      ${f.motif ? `<p style="margin:.7rem 0 0"><small class="discret">MOTIF</small><br>${esc(f.motif)}</p>` : ""}</div>
+    <div class="fb-section"><h3>Articles</h3><div class="defil"><table class="fb-articles"><thead><tr><th>Désignation</th><th class="montant">Qté</th><th class="montant">Prix unitaire</th><th class="montant">Montant</th></tr></thead><tbody>
       ${(f.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="montant">${qte(l.quantite)}</td><td class="montant">${fcfa(l.prix_unitaire)}</td><td class="montant">${fcfa(l.montant)}</td></tr>`).join("")}</tbody>
-      <tfoot><tr><td colspan="3">Total demandé</td><td class="montant">${fcfa(f.montant)}</td></tr></tfoot></table></div>
-    <h3 style="margin:1rem 0 .3rem">Étapes</h3><ul class="points">${etapes.map(([l, d, c]) => `<li><p><b>${esc(l)}</b>${d ? ` <span class="discret petit">· ${esc(quand(d))}</span>` : ""}${c ? `<br><span class="petit">${esc(c)}</span>` : ""}</p></li>`).join("")}</ul>
-    ${f.refus_motif ? `<div class="erreur">${esc(f.refus_motif)}</div>` : ""}
-    ${(f.justif_pieces || []).length ? `<p>${f.justif_pieces.map((p, i) => `<button type="button" class="btn" data-piece="${esc(p)}">Reçu ${i + 1}</button>`).join(" ")}</p>` : ""}
-    ${f.piece_en_cours ? `<p><button type="button" class="btn" data-pc="${f.piece_en_cours}">Pièce de caisse ${esc(f.piece_numero)}${f.piece_statut === "À signer" ? " (à signer)" : ""}</button></p>` : ""}`;
+      <tfoot><tr><td colspan="3">Total demandé</td><td class="montant">${fcfa(f.montant)}</td></tr></tfoot></table></div></div>
+    <div class="fb-section"><h3>Décisions</h3>${journalFicheHtml(f)}${f.refus_motif ? `<div class="erreur" style="margin-top:.5rem">${esc(f.refus_motif)}</div>` : ""}</div>
+    <p class="actions-ligne"><button type="button" class="btn" data-impfb="${f.id}">Imprimer la fiche</button>
+      ${f.piece_en_cours ? `<button type="button" class="btn" data-pc="${f.piece_en_cours}">Pièce de caisse ${esc(f.piece_numero)}${f.piece_statut === "À signer" ? " (à signer)" : ""}</button>` : ""}
+      ${(f.justif_pieces || []).map((p, i) => `<button type="button" class="btn" data-piece="${esc(p)}">Reçu ${i + 1}</button>`).join("")}</p>`;
+}
+// Fiche imprimable, au format des documents de l'entreprise.
+function imprimerFicheBesoin(f) {
+  const ligne = (etape, qui, quand_, obs) => `<tr><td><b>${esc(etape)}</b></td><td>${esc(qui || "")}</td><td style="white-space:nowrap">${esc(quand_ ? quandHeure(quand_) : "")}</td><td>${esc(obs || "")}</td></tr>`;
+  imprimerHtml(`Fiche de besoin ${f.numero}`, `<h1 style="text-align:center;letter-spacing:.03em">FICHE D'EXPRESSION DE BESOIN</h1>
+    <p style="text-align:center" class="discret">N° ${esc(f.numero)} · émise le ${esc(dateLongue(String(f.created_at).slice(0, 10)))}${f.urgence === "Urgente" ? " · <b style='color:#B42318'>URGENT</b>" : ""}</p>
+    <table><tr><th style="width:24%">Demandeur</th><td>${esc(f.beneficiaire || "")} (${esc(f.matricule || "")})</td><th style="width:18%">Emploi</th><td>${esc(f.emploi || "")}</td></tr>
+      <tr><th>Département concerné</th><td>${esc(f.departement || "")}</td><th>Statut</th><td>${esc(f.statut)}</td></tr>
+      <tr><th>Objet</th><td colspan="3"><b>${esc(f.objet)}</b></td></tr>
+      ${f.motif ? `<tr><th>Motif</th><td colspan="3">${esc(f.motif)}</td></tr>` : ""}</table>
+    <h2>Articles</h2>
+    <table><thead><tr><th style="width:6%">N°</th><th>Désignation</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unitaire</th><th style="text-align:right">Montant</th></tr></thead>
+      <tbody>${(f.lignes || []).map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.designation)}</td><td style="text-align:right">${qte(l.quantite)}</td><td style="text-align:right;white-space:nowrap">${fcfa(l.prix_unitaire)}</td><td style="text-align:right;white-space:nowrap">${fcfa(l.montant)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="4"><b>TOTAL DEMANDÉ</b></td><td style="text-align:right;white-space:nowrap"><b>${fcfa(f.montant)} FCFA</b></td></tr>
+      ${f.montant_valide && Number(f.montant_valide) !== Number(f.montant) ? `<tr><td colspan="4"><b>MONTANT RETENU AU CONTRÔLE</b></td><td style="text-align:right;white-space:nowrap"><b>${fcfa(f.montant_valide)} FCFA</b></td></tr>` : ""}</tfoot></table>
+    <p>Arrêtée la présente fiche à la somme de <b>${esc(enLettres(Number(f.montant_valide || f.montant)))} francs CFA</b>.</p>
+    <h2>Circuit de validation</h2>
+    <table><thead><tr><th>Étape</th><th>Par</th><th>Le</th><th>Décision / observation</th></tr></thead><tbody>
+      ${ligne("Demandeur", f.beneficiaire, f.created_at, "Émise")}
+      ${ligne("Responsable hiérarchique", f.visa_nom, f.visa_le, f.visa_le ? (f.statut === "Refusée" && !f.controle_le ? "Défavorable" : "Favorable") + (f.visa_commentaire ? " — " + f.visa_commentaire : "") : "")}
+      ${ligne("Contrôle (direction financière)", f.controle_nom, f.controle_le, f.controle_le ? (f.montant_valide ? "Conforme" + (f.categorie ? " — " + f.categorie : "") : f.statut) + (f.controle_commentaire ? " — " + f.controle_commentaire : "") : "")}
+      ${ligne("DAF", f.decision_nom, f.decision_le, f.decision_le ? (f.caisse ? "Validée — " + f.caisse : "Refusée") + (f.decision_commentaire ? " — " + f.decision_commentaire : "") : "")}
+      ${ligne("Caisse", "", f.paye_le, f.paye_le ? `${fcfa(f.montant_paye)} FCFA remis${f.piece_numero ? " — pièce " + f.piece_numero : ""}` : "")}
+      ${ligne("Justification", f.beneficiaire, f.justif_le, f.justif_le ? `${fcfa(f.justif_montant)} FCFA dépensés${f.justif_controle_le ? " — acceptée" : ""}` : "")}</tbody></table>`);
 }
 const brancherPieces = () => { $$("[data-piece]").forEach(b => b.onclick = () => voirJustificatif(b.dataset.piece));
+  $$("[data-impfb]").forEach(b => b.onclick = () => imprimerFicheBesoin(etat.ficheAffichee));
   $$("[data-pc]").forEach(b => b.onclick = () => imprimerPieceCaisse(b.dataset.pc)); };
 function voirFicheBesoin(f) {
   ouvrirModale(`Fiche de besoin ${f.numero}`, detailFicheHtml(f), { large: true });
@@ -6997,39 +7087,51 @@ function voirFicheBesoin(f) {
 
 /* ---------- Le salarié ---------- */
 function formulaireFicheBesoin(f, retour) {
-  const ligne = l => `<tr><td><input class="fb-des" value="${esc(l.designation || "")}" aria-label="Désignation"></td>
-    <td><input type="number" class="fb-q" min="0.01" step="any" value="${esc(l.quantite ?? 1)}" style="width:5rem" aria-label="Quantité"></td>
-    <td><input type="number" class="fb-pu" min="0" step="1" value="${esc(l.prix_unitaire ?? "")}" style="width:8rem" aria-label="Prix unitaire estimé"></td>
-    <td class="montant fb-mt"></td><td><button type="button" class="btn-lien fb-suppr">Retirer</button></td></tr>`;
+  const m = etat.monEspace || {}, sa = m.salarie || {};
+  const deps = (etat.refs.departements || []).filter(d => d.actif !== false || (f && d.id === f.departement_id));
+  const depDefaut = f ? f.departement_id : ((deps.find(d => d.libelle.toLowerCase() === String(sa.departement || "").toLowerCase()) || {}).id || "");
+  const ligne = l => `<tr><td><input class="fb-des" value="${esc(l.designation || "")}" aria-label="Désignation" placeholder="Ex. : rame de papier A4"></td>
+    <td><input type="number" class="fb-q" min="0.01" step="any" value="${esc(l.quantite ?? 1)}" style="width:4.5rem" aria-label="Quantité"></td>
+    <td><input type="number" class="fb-pu" min="0" step="1" value="${esc(l.prix_unitaire ?? "")}" style="width:7.5rem" aria-label="Prix unitaire estimé"></td>
+    <td class="montant fb-mt" style="white-space:nowrap"></td><td><button type="button" class="btn-lien fb-suppr" aria-label="Retirer l'article">✕</button></td></tr>`;
   ouvrirModale(f ? `Corriger la fiche ${f.numero}` : "Nouvelle fiche de besoin", `
     ${f && f.controle_commentaire ? `<div class="info">À corriger : ${esc(f.controle_commentaire)}</div>` : ""}
-    <label for="fb-objet">Objet *</label><input id="fb-objet" value="${esc(f ? f.objet : "")}" placeholder="Ex. : fournitures de bureau, carburant groupe électrogène…">
-    <label for="fb-motif">Pourquoi ce besoin ?</label><textarea id="fb-motif" rows="2">${esc(f ? f.motif || "" : "")}</textarea>
-    <label for="fb-urg">Urgence</label><select id="fb-urg"><option>Normale</option><option ${f && f.urgence === "Urgente" ? "selected" : ""}>Urgente</option></select>
-    <h3 style="margin:1rem 0 .3rem">Articles</h3>
-    <div class="defil"><table class="saisie"><thead><tr><th>Désignation</th><th>Qté</th><th>Prix unitaire estimé</th><th class="montant">Montant</th><th></th></tr></thead>
-      <tbody id="fb-corps">${(f && f.lignes && f.lignes.length ? f.lignes : [{}]).map(ligne).join("")}</tbody>
-      <tfoot><tr><td colspan="3">Total</td><td class="montant" id="fb-total"></td><td></td></tr></tfoot></table></div>
-    <p><button type="button" class="btn" id="fb-ajout">Ajouter un article</button></p>
-    <p class="discret petit">La fiche part à votre responsable, puis au contrôle de la direction financière et au DAF. Une fois l'argent remis par la caisse,
-      vous avez 48 heures pour la justifier : photo du reçu et montant réellement dépensé, la monnaie revient à la caisse.</p>`, {
-    large: true, libelleSave: f ? "Renvoyer" : "Émettre la fiche",
+    <div class="fb-section"><h3>Demandeur</h3><div class="fb-ident">
+      <div><small>Nom</small><b>${esc(nomPersonne(sa))}</b></div><div><small>Matricule</small><b>${esc(sa.matricule || "")}</b></div>
+      <div><small>Emploi</small><b>${esc(sa.emploi || "—")}</b></div>
+      <div><label for="fb-dep" style="margin:0"><small>Département concerné *</small></label><select id="fb-dep"><option value="">—</option>
+        ${deps.map(d => `<option value="${d.id}" ${d.id === depDefaut ? "selected" : ""}>${esc(d.libelle)}</option>`).join("")}</select></div></div></div>
+    <div class="fb-section"><h3>Le besoin</h3>
+      <label for="fb-objet">Objet *</label><input id="fb-objet" value="${esc(f ? f.objet : "")}" placeholder="Ex. : fournitures de bureau, carburant du groupe électrogène…">
+      <label for="fb-motif">Pourquoi ce besoin ?</label><textarea id="fb-motif" rows="2" placeholder="À quoi servira la dépense, pour qui, pour quand">${esc(f ? f.motif || "" : "")}</textarea>
+      <span class="etiquette-champ" style="display:block;margin-top:.7rem;font-weight:600">Urgence</span>
+      <div class="fb-pills" role="radiogroup" aria-label="Urgence"><label><input type="radio" name="fb-urg" value="Normale" ${!f || f.urgence !== "Urgente" ? "checked" : ""}>Normale</label>
+        <label class="urgent"><input type="radio" name="fb-urg" value="Urgente" ${f && f.urgence === "Urgente" ? "checked" : ""}>Urgente</label></div></div>
+    <div class="fb-section"><h3>Articles</h3>
+      <div class="defil"><table class="saisie fb-articles"><thead><tr><th>Désignation</th><th>Qté</th><th>Prix unitaire estimé</th><th class="montant">Montant</th><th></th></tr></thead>
+        <tbody id="fb-corps">${(f && f.lignes && f.lignes.length ? f.lignes : [{}]).map(ligne).join("")}</tbody></table></div>
+      <button type="button" class="btn" id="fb-ajout" style="margin-top:.5rem">${ic("plus", 15)} Ajouter un article</button>
+      <div class="fb-total"><span><small>Total estimé</small><span id="fb-lettres" class="petit"></span></span><b id="fb-total">0 FCFA</b></div></div>
+    <ol class="fb-etapes" aria-label="Circuit"><li>1. Votre responsable</li><li>2. Contrôle financier</li><li>3. DAF</li><li>4. Caisse : signature</li><li>5. Justification sous 48 h</li></ol>`, {
+    large: true, libelleSave: f ? "Renvoyer la fiche" : "Émettre la fiche",
     onSave: async () => {
       const lignes = $$("#fb-corps tr").map(tr => ({ designation: $(".fb-des", tr).value.trim(), quantite: Number($(".fb-q", tr).value || 0), prix_unitaire: Number($(".fb-pu", tr).value || 0) }))
         .filter(l => l.designation || l.prix_unitaire);
+      if (!$("#fb-dep").value) return "Indiquez le département concerné.";
       if (!$("#fb-objet").value.trim()) return "Indiquez l'objet du besoin.";
       if (!lignes.length) return "Ajoutez au moins un article.";
       if (lignes.some(l => !l.designation || !(l.quantite > 0) || !(l.prix_unitaire > 0))) return "Chaque article a une désignation, une quantité et un prix.";
       try {
-        await appeler("emettre_fiche_besoin", { p: { objet: $("#fb-objet").value.trim(), motif: $("#fb-motif").value.trim(), urgence: $("#fb-urg").value, lignes }, p_id: f ? f.id : null });
+        await appeler("emettre_fiche_besoin", { p: { objet: $("#fb-objet").value.trim(), motif: $("#fb-motif").value.trim(), departement_id: $("#fb-dep").value,
+          urgence: ($("input[name=fb-urg]:checked") || {}).value || "Normale", lignes }, p_id: f ? f.id : null });
       } catch (err) { return messageErreur(err); }
-      toast(f ? "Fiche renvoyée." : "Fiche de besoin émise."); retour();
+      toast(f ? "Fiche renvoyée." : "Fiche de besoin émise : elle part à votre responsable."); retour();
     }
   });
-  const total = () => { let t = 0; $$("#fb-corps tr").forEach(tr => { const m = Math.round(Number($(".fb-q", tr).value || 0) * Number($(".fb-pu", tr).value || 0)); t += m; $(".fb-mt", tr).textContent = m ? fcfa(m) : ""; });
-    $("#fb-total").textContent = fcfa(t); };
+  const total = () => { let t = 0; $$("#fb-corps tr").forEach(tr => { const mt = Math.round(Number($(".fb-q", tr).value || 0) * Number($(".fb-pu", tr).value || 0)); t += mt; $(".fb-mt", tr).textContent = mt ? fcfa(mt) : ""; });
+    $("#fb-total").textContent = fcfa(t) + " FCFA"; $("#fb-lettres").textContent = t ? enLettres(t) + " francs CFA" : ""; };
   const brancher = () => { $$("#fb-corps input").forEach(i => i.oninput = total); $$(".fb-suppr").forEach(b => b.onclick = () => { if ($$("#fb-corps tr").length > 1) b.closest("tr").remove(); total(); }); total(); };
-  $("#fb-ajout").onclick = () => { $("#fb-corps").insertAdjacentHTML("beforeend", ligne({})); brancher(); };
+  $("#fb-ajout").onclick = () => { $("#fb-corps").insertAdjacentHTML("beforeend", ligne({})); brancher(); $$("#fb-corps .fb-des").pop().focus(); };
   brancher();
 }
 
@@ -7066,7 +7168,7 @@ async function vueMesBesoins(zone, actions) {
   // Une carte par fiche : lisible sur téléphone, sans tableau à faire défiler.
   zone.innerHTML = `<div class="panneau"><ul class="points">
     ${fiches.map(f => `<li><p><b>${esc(f.objet)}</b> · <b class="num" style="white-space:nowrap">${fcfa(montantFiche(f))} FCFA</b>${f.urgence === "Urgente" ? ` <span class="pastille alerte">urgent</span>` : ""}
-        <br><span class="discret petit">${esc(f.numero)} · ${esc(quand(f.created_at))}</span><br>${pastilleFiche(f, true)}
+        <br><span class="discret petit">${esc(f.numero)} · ${esc(quand(f.created_at))}${f.departement ? " · " + esc(f.departement) : ""}</span><br>${pastilleFiche(f, true)}
         ${f.refus_motif ? `<br><span class="petit">${esc(f.refus_motif)}</span>` : ""}
         ${f.statut === "À corriger" && f.controle_commentaire ? `<br><span class="petit">À corriger : ${esc(f.controle_commentaire)}</span>` : ""}
         ${f.statut === "Payée" && f.justif_commentaire ? `<br><span class="petit">Justification à reprendre : ${esc(f.justif_commentaire)}</span>` : ""}
@@ -7127,15 +7229,14 @@ async function imprimerPieceCaisse(id) {
 // La caisse prépare et signe la pièce ; ensuite le bénéficiaire signe (son téléphone, ou au guichet).
 function formulairePieceCaisse(f, retour) {
   ouvrirModale(`Pièce de caisse — fiche ${f.numero}`, `<p><b>${fcfa(f.montant_valide)} FCFA</b> à remettre à <b>${esc(f.beneficiaire)}</b> · ${esc(f.objet)}</p>
-    <div class="grille2"><div><label for="p-cpt">Caisse *</label><select id="p-cpt">${optionsCaisses()}</select></div>
+    <div class="grille2"><div><span class="etiquette-champ" style="display:block;font-weight:600">Caisse désignée par le DAF</span><p style="margin:.3rem 0"><b>${esc(f.caisse || "—")}</b></p></div>
       <div><label for="p-date">Date</label><input type="date" id="p-date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
     ${champSignature("sig-caisse", "Votre signature (caisse) *")}
     <p class="discret petit">La pièce part ensuite à la signature du bénéficiaire, sur son téléphone ou ici au guichet. La sortie de caisse n'est enregistrée qu'à sa signature.</p>`, {
     libelleSave: "Signer et préparer la pièce",
     onSave: async () => {
-      if (!$("#p-cpt").value) return "Choisissez la caisse.";
       const sig = signatureDe("sig-caisse"); if (!sig) return "Signez la pièce de caisse.";
-      let id; try { id = await appeler("preparer_piece_caisse", { p_fiche: f.id, p_compte: $("#p-cpt").value, p_signature: sig, p_date: $("#p-date").value || null }); }
+      let id; try { id = await appeler("preparer_piece_caisse", { p_fiche: f.id, p_compte: null, p_signature: sig, p_date: $("#p-date").value || null }); }
       catch (err) { return messageErreur(err); }
       toast("Pièce préparée : elle attend la signature du bénéficiaire.");
       setTimeout(() => { if (confirm(`Le bénéficiaire est-il au guichet pour signer maintenant ?\n(Sinon, il signera depuis son téléphone, dans « Mes fiches de besoin ».)`)) formulaireSignaturePiece(id, true, retour); else retour(); }, 50);
@@ -7191,21 +7292,27 @@ function formulaireControleFiche(f, retour) {
 
 function formulaireDecisionBordereau(b, fiches, retour) {
   ouvrirModale(`Bordereau ${b.numero}`, `<p class="discret">Validez ou refusez chaque fiche. Une fiche refusée revient au salarié avec votre motif.</p>
-    <div class="defil"><table><thead><tr><th>Fiche</th><th>Bénéficiaire</th><th>Objet</th><th class="montant">Montant</th><th>Décision</th><th>Motif du refus</th></tr></thead><tbody>
+    <div class="defil"><table><thead><tr><th>Fiche</th><th>Bénéficiaire</th><th>Objet</th><th class="montant">Montant</th><th>Décision</th><th>Caisse qui paie</th><th>Motif du refus</th></tr></thead><tbody>
     ${fiches.map(f => `<tr><td class="code"><button type="button" class="btn-lien" data-fbv="${f.id}">${esc(f.numero)}</button></td><td>${esc(f.beneficiaire)}</td>
       <td>${esc(f.objet)}<div class="discret petit">${esc(f.categorie || "")}</div></td><td class="montant">${fcfa(f.montant_valide)}</td>
       <td><select data-dec="${f.id}" aria-label="Décision"><option>Validée</option><option>Refusée</option></select></td>
+      <td><select data-caisse="${f.id}" aria-label="Caisse qui paie">${optionsCaisses()}</select></td>
       <td><input data-com="${f.id}" aria-label="Motif"></td></tr>`).join("")}</tbody>
-    <tfoot><tr><td colspan="3">Total</td><td class="montant">${fcfa(fiches.reduce((t, f) => t + Number(f.montant_valide), 0))}</td><td colspan="2"></td></tr></tfoot></table></div>`, {
+    <tfoot><tr><td colspan="3">Total</td><td class="montant">${fcfa(fiches.reduce((t, f) => t + Number(f.montant_valide), 0))}</td><td colspan="3"></td></tr></tfoot></table></div>
+    <p><label for="bd-tout" style="display:inline">Même caisse pour tout le bordereau :</label> <select id="bd-tout" style="width:auto">${optionsCaisses()}</select></p>
+    <p class="discret petit">Seul le responsable de la caisse choisie verra la fiche et la paiera.</p>`, {
     large: true, libelleSave: "Enregistrer mes décisions",
     onSave: async () => {
-      const dec = fiches.map(f => ({ fiche_id: f.id, decision: $(`[data-dec="${f.id}"]`).value, commentaire: $(`[data-com="${f.id}"]`).value.trim() || null }));
+      const dec = fiches.map(f => ({ fiche_id: f.id, decision: $(`[data-dec="${f.id}"]`).value, compte_tresorerie_id: $(`[data-caisse="${f.id}"]`).value || null,
+        commentaire: $(`[data-com="${f.id}"]`).value.trim() || null }));
       if (dec.some(d => d.decision === "Refusée" && !d.commentaire)) return "Motivez chaque refus.";
+      if (dec.some(d => d.decision === "Validée" && !d.compte_tresorerie_id)) return "Choisissez la caisse qui paie chaque fiche validée.";
       try { await appeler("decider_bordereau_besoins", { p_bordereau: b.id, p_decisions: dec }); } catch (err) { return messageErreur(err); }
       toast("Bordereau traité."); retour();
     }
   });
   $$("[data-fbv]").forEach(x => x.onclick = () => voirFicheBesoin(fiches.find(f => f.id === x.dataset.fbv)));
+  $("#bd-tout").onchange = e => { if (e.target.value) $$("[data-caisse]").forEach(c => { c.value = e.target.value; }); };
 }
 
 function imprimerBordereau(b, fiches) {
@@ -7224,13 +7331,12 @@ function imprimerBordereau(b, fiches) {
 function formulaireCaisseFiche(f, recevoir, retour) {
   const montant = recevoir ? f.montant_paye - f.justif_montant : f.montant_valide;
   ouvrirModale(`${recevoir ? "Recevoir la monnaie" : "Payer"} — fiche ${f.numero}`, `<p><b>${fcfa(montant)} FCFA</b> ${recevoir ? "rendus par" : "à remettre à"} <b>${esc(f.beneficiaire)}</b> · ${esc(f.objet)}</p>
-    <div class="grille2"><div><label for="p-cpt">Caisse *</label><select id="p-cpt">${optionsCaisses()}</select></div>
+    <div class="grille2"><div><span class="etiquette-champ" style="display:block;font-weight:600">Caisse</span><p style="margin:.3rem 0"><b>${esc(f.caisse || "—")}</b></p></div>
       <div><label for="p-date">Date</label><input type="date" id="p-date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
     <p class="discret petit">${recevoir ? "Recette de caisse : l'avance du salarié est soldée." : "Avance à justifier au nom du salarié (compte 4213) : il a 48 heures pour apporter le reçu."}</p>`, {
     libelleSave: recevoir ? "Encaisser" : "Payer",
     onSave: async () => {
-      if (!$("#p-cpt").value) return "Choisissez la caisse.";
-      try { await appeler(recevoir ? "recevoir_monnaie_fiche" : "payer_fiche_besoin", { p_id: f.id, p_compte: $("#p-cpt").value, p_date: $("#p-date").value || null }); }
+      try { await appeler(recevoir ? "recevoir_monnaie_fiche" : "payer_fiche_besoin", { p_id: f.id, p_compte: null, p_date: $("#p-date").value || null }); }
       catch (err) { return messageErreur(err); }
       toast(recevoir ? "Monnaie encaissée : fiche soldée." : "Fiche payée."); retour();
     }
@@ -7277,7 +7383,7 @@ async function pageFichesBesoin() {
   const tableau = (liste, action, coche) => `<div class="defil"><table><thead><tr>${coche ? `<th><input type="checkbox" id="fb-tout" aria-label="Tout cocher" checked></th>` : ""}<th>N°</th><th>Date</th><th>Bénéficiaire</th><th>Objet</th><th class="montant">Montant</th><th>Statut</th><th></th></tr></thead><tbody>
     ${liste.map(f => `<tr>${coche ? `<td><input type="checkbox" data-coche="${f.id}" checked aria-label="${esc(f.numero)}"></td>` : ""}<td class="code">${esc(f.numero)}</td><td class="code">${esc(quand(f.created_at))}</td>
       <td>${esc(f.beneficiaire)}<div class="discret petit">${esc(f.emploi || "")}</div></td>
-      <td><b>${esc(f.objet)}</b>${f.urgence === "Urgente" ? ` <span class="pastille alerte">urgent</span>` : ""}${f.categorie ? `<div class="discret petit">${esc(f.categorie)}</div>` : ""}</td>
+      <td><b>${esc(f.objet)}</b>${f.urgence === "Urgente" ? ` <span class="pastille alerte">urgent</span>` : ""}<div class="discret petit">${esc([f.departement, f.categorie, f.caisse && "payée par " + f.caisse].filter(Boolean).join(" · "))}</div></td>
       <td class="montant">${fcfa(montantFiche(f))}</td><td>${pastilleFiche(f)}</td>
       <td><div class="actions-ligne"><button class="btn" data-fbv="${f.id}">Voir</button>${action ? action(f) : ""}</div></td></tr>`).join("")
       || `<tr><td colspan="${coche ? 8 : 7}" class="vide">Aucune fiche.</td></tr>`}</tbody>
