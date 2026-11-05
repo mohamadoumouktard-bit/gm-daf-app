@@ -317,6 +317,16 @@ const CONFIG = window.GM_CONFIG || {
 const LOGO = window.LOGO_GM || "";
 const adresseRetour = () => CONFIG.URL_APPLICATION || location.origin + location.pathname;
 
+/* Deux applications, un seul code : « daf » (index.html, tout) et « rh » (rh.html, produite à partir
+   de ce fichier par .claude/construire-rh.cjs, qui y fixe window.GM_APP). Mêmes données, mêmes comptes ;
+   l'application RH ne montre que les pages ci-dessous. */
+const APP = window.GM_APP === "rh" ? "rh" : "daf";
+const NOM_APP = APP === "rh" ? "Guest Markets RH" : "Guest Markets Management";
+const PAGES_RH = new Set(["accueil", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_evaluations", "mon_equipe",
+  "personnel", "paie", "conges", "demandes_personnel", "evaluations", "utilisateurs", "postes", "profil"]);
+const GROUPES_RH = new Set(["Mon espace", "Ressources humaines", "Administration", "Compte"]);
+const adresseApp = app => new URL((app === "rh" ? "rh.html" : "./") + location.search, location.href).href;
+
 /* =====================================================================
    Rôles
    La séparation des tâches est inscrite dans la base : celui qui saisit un
@@ -851,7 +861,15 @@ function brancherActivites(prefixe, selRole) {
 }
 const lireActivites = prefixe => $$(`[data-act="${prefixe}"]:checked`).map(c => c.value);
 // Une entrée du menu : le rôle, et pour l'espace personnel, le lien avec une fiche du personnel.
-const navVisible = n => peut(n.roles) && (!n.cond || n.cond());
+// navPermise : ce que les droits ouvrent ; navVisible : ce que montre l'application courante.
+const navPermise = n => peut(n.roles) && (!n.cond || n.cond());
+const navVisible = n => navPermise(n) && (APP !== "rh" || (n.id ? PAGES_RH.has(n.id) : GROUPES_RH.has(n.groupe)));
+// Pages permises qui relèvent de l'autre application (hors accueil et profil, communs aux deux).
+const pagesAutreApp = () => NAV.filter(n => n.id && !["accueil", "profil"].includes(n.id) && navPermise(n)
+  && (APP === "rh" ? !PAGES_RH.has(n.id) : PAGES_RH.has(n.id) && !["utilisateurs", "postes"].includes(n.id)));
+// Qui va où : RH et salariés sans autre activité → application RH ; personne sans page RH → application de gestion.
+const appAttendue = () => mesRoles().every(r => ["rh", "salarie"].includes(r)) ? "rh"
+  : APP === "rh" && !NAV.some(n => n.id && !["accueil", "profil"].includes(n.id) && PAGES_RH.has(n.id) && navPermise(n)) ? "daf" : APP;
 const estGestionnaire = () => peut(GESTION);
 
 async function demarrer() {
@@ -887,6 +905,7 @@ async function entrer(session) {
   if (error || !data || !data.actif) return ecranEnAttente();
   const demandee = location.hash.replace("#/", "");
   await chargerMonEspace();
+  if (appAttendue() !== APP) { location.replace(adresseApp(appAttendue()) + location.hash); return; }
   etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_dossier" : estLivreurSeul() ? "ma_tournee" : "accueil";
   rendreCoque();
 }
@@ -897,8 +916,8 @@ async function entrer(session) {
 function cadreAcces(contenu) {
   $("#app").innerHTML = `<div class="acces">
     <div class="acces-marque"><span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span>
-      <div><blockquote>Guest Markets Management</blockquote>
-      <p class="acces-sous">Gestion administrative, financière et des ressources humaines</p></div>
+      <div><blockquote>${NOM_APP}</blockquote>
+      <p class="acces-sous">${APP === "rh" ? "Ressources humaines : personnel, paie, congés et espace salarié" : "Gestion administrative, financière et des ressources humaines"}</p></div>
       <small>Accès réservé aux utilisateurs invités</small></div>
     <div class="acces-form">${contenu}</div></div>`;
 }
@@ -1049,12 +1068,16 @@ function rendreCoque() {
     ? `<div class="groupe">${esc(n.groupe)}</div>`
     : `<a href="#/${n.id}" data-page="${n.id}">${ic(ICONE_PAGE[n.id])}<span>${esc(n.l)}</span></a>`).join("");
   const nouvelles = [[SAISIE_ACHAT, "achats", "panier", "Un achat"], [FINANCE, "tresorerie", "portefeuille", "Une dépense ou une recette"],
-    [VENTE, "ventes", "facture", "Une vente ou une facture"], [PAIE_PREPARE, "paie", "billet", "Un élément de paie"]].filter(([r]) => peut(r));
+    [VENTE, "ventes", "facture", "Une vente ou une facture"], [PAIE_PREPARE, "paie", "billet", "Un élément de paie"]]
+    .filter(([r, pg]) => peut(r) && (APP !== "rh" || PAGES_RH.has(pg)));
+  const autre = pagesAutreApp().length && appAttendue() === APP && !mesRoles().every(r => ["rh", "salarie"].includes(r))
+    ? (APP === "rh" ? ["daf", "Gestion et finances"] : ["rh", "Application RH"]) : null;
   $("#app").innerHTML = `<div class="coque">
     <aside class="barre" id="barre">
       <div class="barre-tete"><button class="b-fermer-menu" id="b-fermer-menu" aria-label="Fermer le menu">✕</button>
-        <span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span><span class="sous-logo">Guest Markets Management</span></div>
-      <nav aria-label="Navigation principale">${liens}</nav>
+        <span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span><span class="sous-logo">${NOM_APP}</span></div>
+      <nav aria-label="Navigation principale">${liens}
+        ${autre ? `<div class="groupe">Autre application</div><a href="${adresseApp(autre[0])}" class="lien-app">${ic("fleche")}<span>${esc(autre[1])}</span></a>` : ""}</nav>
       <div class="barre-pied"><span class="avatar" aria-hidden="true">${esc(initiales(p).toUpperCase())}</span>
         <div class="qui"><b>${esc(nomComplet(p))}</b><span>${esc(libelleRoles(p))}</span></div>
         <button class="b-deco" id="b-deco" title="Se déconnecter" aria-label="Se déconnecter">${ic("sortie")}</button></div>
@@ -1090,7 +1113,7 @@ function rendreCoque() {
     if (!e.target.closest(".nouvelle")) fermerNouvelle();
     if (!e.target.closest(".recherche") && $("#resultats-page")) $("#resultats-page").hidden = true;
   };
-  $$(".barre a").forEach(a => a.onclick = e => { e.preventDefault(); menu(false); aller(a.dataset.page); });
+  $$(".barre a[data-page]").forEach(a => a.onclick = e => { e.preventDefault(); menu(false); aller(a.dataset.page); });
   $("#b-cloche").onclick = () => aller("accueil");
   if ($("#b-nouvelle")) {
     $("#b-nouvelle").onclick = () => { const m = $("#menu-nouvelle"); m.hidden = !m.hidden; $("#b-nouvelle").setAttribute("aria-expanded", String(!m.hidden)); };
@@ -1116,7 +1139,7 @@ function rendreCoque() {
 
 /* Pastille de la cloche : le nombre de points à traiter (recalculé à chaque passage par l'accueil). */
 async function majCloche(n) {
-  if (n === undefined) { try { n = (await aFaireFinances()).length; } catch (e) { return; } }
+  if (n === undefined) { try { n = (await aFaireApp()).length; } catch (e) { return; } }
   const b = $("#badge-cloche"); if (!b) return;
   b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n);
 }
@@ -1142,6 +1165,7 @@ async function aller(page, param = {}) {
     else if (page === "parametres") await pageParametres();
     else if (page === "journal") await pageJournal();
     else if (page === "profil") pageProfil();
+    else if (APP === "rh") await pageAccueilRH();
     else await pageAccueil();
   } catch (err) {
     c.innerHTML = `<div class="erreur">${esc(messageErreur(err))}</div>`;
@@ -1223,6 +1247,47 @@ async function pageAccueil() {
   </div>`;
   brancherAller();
   if ($("#b-tout-traiter")) $("#b-tout-traiter").onclick = () => { $$(".traiter li.cache").forEach(li => { li.hidden = false; }); $("#b-tout-traiter").remove(); };
+}
+
+/* Points à traiter de l'application courante (l'application RH ne montre que les siens). */
+const dansApp = x => APP !== "rh" || !x.page || PAGES_RH.has(x.page);
+const aFaireApp = async () => (await aFaireFinances()).filter(dansApp);
+
+/* Accueil de l'application RH : points à traiter du personnel et accès aux pages RH. */
+async function pageAccueilRH() {
+  const p = etat.profil;
+  const salut = new Date().getHours() < 18 ? "Bonjour" : "Bonsoir";
+  const [faire, points] = await Promise.all([aFaireApp(), pointsACompleter()]);
+  const items = [...faire, ...points.filter(dansApp)].map(pt => {
+    const m = /^<b>([\s\S]*?)<\/b>\s*:?\s*([\s\S]*)$/.exec(pt.texte || "");
+    return { ...pt, titre: m ? m[1] : pt.texte, precision: m ? m[2] : "" };
+  });
+  majCloche(items.length);
+  const rapides = [["personnel", "Dossier du personnel", "Embauches, carrière, discipline, sorties", "bleu"],
+    ["paie", "Paie", "Éléments du mois, bulletins, stagiaires, déclarations", "vert"],
+    ["conges", "Congés", "Demandes, soldes et planning", "orange"],
+    ["demandes_personnel", "Demandes du personnel", "Attestations, avances, formations", "violet"],
+    ["evaluations", "Évaluations", "Campagnes et entretiens annuels", "bleu"],
+    ["mon_dossier", "Mon dossier", "Ma fiche, mes documents", "bleu"],
+    ["mes_conges", "Mes congés", "Demander un congé, voir mon solde", "orange"],
+    ["mes_bulletins", "Mes bulletins", "Mes bulletins de paie", "vert"],
+    ["mes_demandes", "Mes demandes", "Attestation, avance, formation", "violet"],
+    ["mon_equipe", "Mon équipe", "Congés et demandes à viser", "bleu"]]
+    .filter(([pg]) => NAV.some(n => n.id === pg && navVisible(n)));
+  $("#contenu").innerHTML = `<div class="accueil">
+    <div class="entete-page"><div><h1>${salut} ${esc(p.prenom || nomComplet(p))}</h1>
+      <p class="discret">Ressources humaines · ${esc(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))}</p></div></div>
+    <section class="carte pleine"><div class="carte-tete"><h2>À traiter</h2><span class="badge-compte">${items.length}</span></div>
+      ${items.length ? `<ul class="liste-carte traiter">${items.map(x => `<li>
+        <span class="pastille-ic petit ${/alerte|échue|sans|aucun/i.test(x.titre + x.precision) ? "rouge" : "orange"}">${ic(ICONE_PAGE[x.page] || "alerte", 16)}</span>
+        <span class="lib"><b>${x.titre}</b>${x.precision ? `<small>${x.precision}</small>` : ""}</span>
+        ${x.page ? `<button class="btn" data-aller="${x.page}" data-param='${esc(JSON.stringify(x.param || {}))}'>${esc(x.bouton || "Ouvrir")}</button>` : ""}</li>`).join("")}</ul>`
+      : `<p class="vide">Rien en attente. Tout est à jour.</p>`}</section>
+    ${rapides.length ? `<h2 class="titre-section">Accès rapides</h2>
+    <div class="rapides">${rapides.map(([pg, l, d, c]) => `<a class="rapide" href="#/${pg}" data-aller="${pg}"><span class="pastille-ic ${c}">${ic(ICONE_PAGE[pg], 20)}</span>
+      <span><b>${esc(l)}</b><small>${esc(d)}</small></span>${ic("chevron", 16)}</a>`).join("")}</div>` : ""}
+  </div>`;
+  brancherAller();
 }
 
 /* Chaque point n'est montré qu'à ceux qui peuvent le traiter. */
