@@ -348,7 +348,7 @@ const adresseRetour = () => CONFIG.URL_APPLICATION || location.origin + location
    l'application RH ne montre que les pages ci-dessous. */
 const APP = window.GM_APP === "rh" ? "rh" : "daf";
 const NOM_APP = APP === "rh" ? "Guest Markets RH" : "Guest Markets Management";
-const PAGES_RH = new Set(["accueil", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_besoins", "mes_evaluations", "mon_equipe",
+const PAGES_RH = new Set(["accueil", "mon_pointage", "presences", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_besoins", "mes_evaluations", "mon_equipe",
   "personnel", "paie", "conges", "demandes_personnel", "evaluations", "utilisateurs", "postes", "profil", "departements"]);
 const GROUPES_RH = new Set(["Mon espace", "Ressources humaines", "Référentiels", "Administration", "Compte"]);
 const adresseApp = app => new URL((app === "rh" ? "rh.html" : "./") + location.search, location.href).href;
@@ -528,6 +528,7 @@ const ENTITES = {
       { k: "site_id", l: "Bureau ou site", t: "ref", liste_ref: "sites" },
       { k: "paye_par", l: "Salaire payé par", t: "select", options: ["Entreprise", "Guest Cameroun", "CEO"], defaut: "Entreprise",
         indice: "Guest Cameroun ou le CEO : le paiement passe au compte de l'exploitant, et la personne n'est pas présélectionnée dans les états de virement de l'entreprise." },
+      { k: "pointage_libre", l: "Poste de terrain : pointage accepté hors des bureaux", t: "bool", defaut: false },
       { k: "manager_id", l: "Responsable hiérarchique", t: "ref", liste_ref: "salaries_liste", indice: "Il vise les congés, formations et avances de ce salarié et conduit son évaluation annuelle." },
       { k: "salaire_base", l: "Salaire de base mensuel (FCFA)", t: "montant", req: true, liste: true, indice: "Calculé à partir du net convenu (Paie → Rémunérations) et réajusté à chaque paie : le modifier ici abandonne le net convenu. Pour une augmentation, passez par Nouvel événement → Revalorisation." },
       { k: "indemnite_stage", l: "Indemnité de stage mensuelle (FCFA)", t: "montant", indice: "Stagiaires seulement : versée en Trésorerie, hors paie." },
@@ -699,6 +700,7 @@ const LECTEURS_REPRISE = ["admin", "daf", "comptable", "auditeur"];
 const NAV = [
   { id: "accueil", l: "Accueil", roles: TOUS },
   { groupe: "Mon espace", roles: TOUT_LE_MONDE, cond: () => aEspace() },
+  { id: "mon_pointage", l: "Pointer", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mon_dossier", l: "Mon dossier", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mes_conges", l: "Mes congés", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mes_bulletins", l: "Mes bulletins", roles: TOUT_LE_MONDE, cond: () => aEspace() && !estStagiaireEspace() },
@@ -734,6 +736,7 @@ const NAV = [
   { id: "personnel", l: "Dossier du personnel", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { id: "paie", l: "Paie", roles: ["rh", "daf", "admin", "auditeur", "dg", "tresorier"] },
   { id: "conges", l: "Congés", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
+  { id: "presences", l: "Présences", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { id: "demandes_personnel", l: "Demandes du personnel", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { id: "evaluations", l: "Évaluations", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { groupe: "Comptabilité", roles: FINANCE },
@@ -950,7 +953,7 @@ async function entrer(session) {
   await chargerMonEspace();
   try { await chargerListe("departements"); } catch (e) { etat.refs.departements = []; }
   if (appAttendue() !== APP) { location.replace(adresseApp(appAttendue()) + location.hash); return; }
-  etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_dossier" : estLivreurSeul() ? "ma_tournee" : "accueil";
+  etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_pointage" : estLivreurSeul() ? "ma_tournee" : "accueil";
   rendreCoque();
 }
 
@@ -1095,7 +1098,7 @@ const ICONE_PAGE = {
   categories_operation: "etiquette", plan_comptable: "liste", activites: "mallette", sites: "repere", vehicules: "voiture", comptes_tresorerie: "banque",
   parametres: "reglages", utilisateurs: "bouclier", postes: "mallette", journal: "historique", profil: "personne",
   mon_dossier: "personne", mes_conges: "calendrier", mes_bulletins: "billet", mes_demandes: "document", mes_evaluations: "cible", mon_equipe: "groupe",
-  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe"
+  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe", mon_pointage: "repere", presences: "historique"
 };
 const initiales = p => ((p.prenom || "").trim()[0] || "") + ((p.nom || "").trim()[0] || "") || (p.email || "?")[0];
 
@@ -1307,7 +1310,9 @@ async function pageAccueilRH() {
     return { ...pt, titre: m ? m[1] : pt.texte, precision: m ? m[2] : "" };
   });
   majCloche(items.length);
-  const rapides = [["personnel", "Dossier du personnel", "Embauches, carrière, discipline, sorties", "bleu"],
+  const rapides = [["mon_pointage", "Pointer", "Mon arrivée et mon départ, depuis le bureau", "vert"],
+    ["presences", "Présences", "Présents, retards et absences du jour et du mois", "orange"],
+    ["personnel", "Dossier du personnel", "Embauches, carrière, discipline, sorties", "bleu"],
     ["paie", "Paie", "Éléments du mois, bulletins, stagiaires, déclarations", "vert"],
     ["conges", "Congés", "Demandes, soldes et planning", "orange"],
     ["demandes_personnel", "Demandes du personnel", "Attestations, avances, formations", "violet"],
@@ -2157,6 +2162,13 @@ async function aFaireFinances() {
     if (susp) pts.push({ texte: `<b>${susp} salarié(s) suspendu(s)</b> : enregistrer la reprise ou la sortie.`, page: "personnel", bouton: "Voir" });
   }
   if (peut(["rh", "daf", "admin"])) {
+    try {
+      const pj = await appeler("presence_jour", { p_jour: new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Douala" }) }) || [];
+      const ab = pj.filter(x => x.statut === "Absent").length, re = pj.filter(x => x.statut === "En retard").length;
+      if (ab || re) pts.push({ texte: `<b>Présences du jour</b> : ${ab} absent(s) sans congé, ${re} retard(s).`, page: "presences", bouton: "Voir" });
+      const { count: sansPos } = await sb.from("sites").select("id", { count: "exact", head: true }).eq("actif", true).is("latitude", null);
+      if (sansPos) pts.push({ texte: `<b>${sansPos} bureau(x) sans position enregistrée</b> : le pointage n'y est pas possible. Enregistrez-la sur place, depuis votre téléphone.`, page: "presences", param: { onglet: "bureaux" }, bouton: "Enregistrer" });
+    } catch (e) { /* lot 12 absent */ }
     const n = await compter(sb.from("conges").select("id", { count: "exact", head: true }).eq("statut", "Demandé"));
     if (n) pts.push({ texte: `<b>${n} demande(s) de congé</b> attendent une décision.`, page: "conges", bouton: "Décider" });
   }
@@ -7439,11 +7451,213 @@ async function pageFichesBesoin() {
   afficher();
 }
 
+/* =====================================================================
+   Lot 12 — Pointage de présence géolocalisé
+   Le salarié pointe son arrivée et son départ depuis son téléphone ; la base
+   vérifie la position (rayon d'un bureau, sauf poste de terrain ou mission).
+   La RH suit la journée, le mois, les bureaux, les missions et les corrections.
+   Suivi seulement : aucun effet sur la paie.
+   ===================================================================== */
+const PRESENCES_LECTEURS = ["rh", "daf", "admin", "auditeur", "dg"];
+const PRESENCES_GESTION = ["rh", "daf", "admin"];
+const JOURS_SEMAINE = ["", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+const CLASSE_PRESENCE = { "Présent": "ok", "En retard": "attente", "Absent": "alerte", "En congé": "inactif", "Repos": "inactif", "Férié": "inactif", "Attendu": "", "Sans accès": "inactif" };
+const heureCourte = d => d ? new Date(d).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Douala" }) : "";
+
+// Position du téléphone : haute précision, jamais une position ancienne.
+function maPosition() {
+  return new Promise((ok, ko) => {
+    if (!navigator.geolocation) return ko(new Error("Ce navigateur ne donne pas la position. Utilisez le navigateur de votre téléphone (Chrome, Safari)."));
+    navigator.geolocation.getCurrentPosition(p => ok(p.coords), e => ko(new Error(
+      e.code === 1 ? "Localisation refusée. Autorisez-la pour cette application : dans le navigateur, touchez le cadenas à côté de l'adresse › Autorisations › Position, puis recommencez."
+      : e.code === 3 ? "La position met trop de temps à arriver. Activez la localisation (GPS) du téléphone, rapprochez-vous d'une fenêtre et recommencez."
+      : "Position indisponible. Activez la localisation (GPS) du téléphone et recommencez.")), { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 });
+  });
+}
+
+/* ---------- Le salarié : pointer ---------- */
+async function pageMonPointage() {
+  const p = await appeler("mon_pointage");
+  if (!p) { $("#contenu").innerHTML = `<div class="vide">Votre compte n'est relié à aucune fiche du personnel. Adressez-vous à la RH.</div>`; return; }
+  const duJour = (p.pointages || []).filter(x => x.jour === p.aujourdhui);
+  const arrivee = duJour.find(x => x.type === "Arrivée"), depart = duJour.find(x => x.type === "Départ");
+  const prochain = !arrivee ? "Arrivée" : !depart ? "Départ" : null;
+  const h = p.horaires;
+  const jour = new Date(p.aujourdhui + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const carte = (lib, x) => `<div class="kpi"><span class="pastille-ic ${x ? "vert" : "bleu"}">${ic(x ? "repere" : "historique", 20)}</span><span class="kpi-txt">
+    <b>${x ? esc(heureCourte(x.heure)) : "—"}</b><span>${esc(lib)}${x ? ` · ${esc(x.site || (x.hors_bureau === "Mission" ? "en mission" : x.hors_bureau === "Terrain" ? "sur le terrain" : x.manuel ? "corrigé par la RH" : ""))}` : ""}</span></span></div>`;
+  const parJour = {}; (p.pointages || []).forEach(x => { (parJour[x.jour] = parJour[x.jour] || {})[x.type] = x; });
+  $("#contenu").innerHTML = `<div style="max-width:560px;margin:0 auto">
+    <div class="entete-page"><div><h1>Pointage</h1><p class="discret">${esc(jour.charAt(0).toUpperCase() + jour.slice(1))}${h ? ` · horaires ${esc(h[0])} – ${esc(h[1])}` : " · jour de repos"}${p.ferie ? ` · <b>${esc(p.ferie)}</b> (férié)` : ""}</p></div></div>
+    <div class="panneau" style="text-align:center;padding:1.4rem 1rem">
+      <div id="horloge" style="font-size:2.6rem;font-weight:700;letter-spacing:.02em" class="num"></div>
+      ${prochain ? `<button class="btn btn-principal" id="b-pointer" style="margin-top:1rem;font-size:1.15rem;padding:.9rem 1.6rem;width:100%;max-width:340px">${ic("repere", 20)} Pointer mon ${prochain === "Arrivée" ? "arrivée" : "départ"}</button>`
+        : `<p style="margin-top:1rem"><span class="pastille ok">Journée pointée</span></p>`}
+      <p id="pt-etat" class="petit discret" style="margin:.8rem 0 0">${!p.bureaux ? "Le pointage n'est pas encore ouvert : la position des bureaux n'a pas été enregistrée."
+        : p.mission ? `Mission déclarée aujourd'hui (${esc(p.mission)}) : vous pouvez pointer d'où vous êtes.`
+        : p.terrain ? "Poste de terrain : vous pouvez pointer d'où vous êtes ; votre position est enregistrée."
+        : "Pointez depuis le bureau : votre position est vérifiée (localisation du téléphone activée)."}</p></div>
+    <div class="kpis" style="margin-top:1rem">${carte("Arrivée", arrivee)}${carte("Départ", depart)}</div>
+    <h2 class="titre-section">Mes 14 derniers jours</h2>
+    <div class="panneau"><ul class="points">${Object.keys(parJour).sort().reverse().map(j => { const x = parJour[j];
+      return `<li><p><b>${esc(new Date(j + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }))}</b>
+        <br><span class="petit">Arrivée ${esc(heureCourte((x["Arrivée"] || {}).heure) || "—")} · départ ${esc(heureCourte((x["Départ"] || {}).heure) || "—")}</span></p></li>`; }).join("")
+      || `<li><p class="vide">Aucun pointage pour l'instant.</p></li>`}</ul></div></div>`;
+  const tic = () => { const e = $("#horloge"); if (!e) return clearInterval(etat.horloge); e.textContent = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Africa/Douala" }); };
+  clearInterval(etat.horloge); etat.horloge = setInterval(tic, 1000); tic();
+  if ($("#b-pointer")) $("#b-pointer").onclick = async () => {
+    const b = $("#b-pointer"); b.disabled = true; $("#pt-etat").textContent = "Localisation en cours…";
+    try {
+      const c = await maPosition();
+      $("#pt-etat").textContent = `Position trouvée (± ${Math.round(c.accuracy)} m). Enregistrement…`;
+      const r = await appeler("pointer", { p_type: prochain, p_lat: c.latitude, p_lng: c.longitude, p_precision: c.accuracy });
+      toast(`${prochain} pointée à ${heureCourte(r.heure)}${r.site ? " — " + r.site : r.hors_bureau === "Mission" ? " — en mission" : " — sur le terrain"}.`);
+      await chargerMonEspace(); recharger();
+    } catch (err) { b.disabled = false; $("#pt-etat").innerHTML = `<span class="erreur" style="display:block">${esc(messageErreur(err))}</span>`; }
+  };
+}
+
+/* ---------- La RH : présences ---------- */
+async function pagePresences() {
+  await Promise.all([chargerListe("salaries_liste"), chargerListe("sites")]);
+  const gere = peut(PRESENCES_GESTION);
+  let onglet = etat.param.onglet || etat.ongletPresences || "jour";
+  const onglets = [["jour", "Aujourd'hui"], ["mois", "Mois"], ["bureaux", "Bureaux"], ["missions", "Missions"], ...(gere ? [["corrections", "Corrections"], ["horaires", "Horaires et jours fériés"]] : [])];
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Présences</h1>
+      <p class="discret">Pointage au téléphone, position vérifiée autour des bureaux (sauf postes de terrain et missions). Suivi seulement : aucun effet sur la paie.</p></div></div>
+    <div class="panneau"><div class="onglets" role="tablist">${onglets.map(([k, l]) => `<button role="tab" data-onglet="${k}" aria-selected="${k === onglet}">${esc(l)}</button>`).join("")}</div><div id="zone"></div></div>`;
+  const zone = $("#zone"), auj = new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Douala" });
+  const vues = {
+    async jour() {
+      const jour = etat.jourPresence || auj;
+      const l = await appeler("presence_jour", { p_jour: jour }) || [];
+      const n = st => l.filter(x => x.statut === st).length;
+      zone.innerHTML = `<div class="outils"><label for="pj-jour" style="margin:0">Jour</label><input type="date" id="pj-jour" value="${esc(jour)}" style="width:auto">
+        <span class="pastille ok">${n("Présent")} présent(s)</span><span class="pastille attente">${n("En retard")} en retard</span><span class="pastille alerte">${n("Absent")} absent(s)</span>
+        <span class="pastille inactif">${n("En congé")} en congé</span>${n("Sans accès") ? `<span class="pastille inactif">${n("Sans accès")} sans accès à l'application</span>` : ""}</div>
+        <div class="defil"><table><thead><tr><th>Salarié</th><th>Département</th><th>Arrivée</th><th>Départ</th><th>Lieu</th><th>Statut</th></tr></thead><tbody>
+        ${l.map(x => `<tr><td><b>${esc(x.nom)}</b><div class="discret petit">${esc(x.matricule)} · ${esc(x.emploi || "")}</div></td><td>${esc(x.departement || "")}</td>
+          <td class="code">${esc(heureCourte(x.arrivee) || "—")}${x.retard_min && x.statut === "En retard" ? `<div class="petit negatif">+${x.retard_min} min</div>` : ""}</td>
+          <td class="code">${esc(heureCourte(x.depart) || "—")}</td>
+          <td>${esc(x.site || (x.hors_bureau === "Mission" ? "Mission" : x.hors_bureau === "Terrain" ? "Terrain" : ""))}${x.manuel ? ` <span class="pastille">corrigé</span>` : ""}</td>
+          <td><span class="pastille ${CLASSE_PRESENCE[x.statut] || ""}">${esc(x.statut)}</span></td></tr>`).join("") || `<tr><td colspan="6" class="vide">Personne en poste ce jour-là.</td></tr>`}</tbody></table></div>`;
+      $("#pj-jour").onchange = e => { etat.jourPresence = e.target.value; vues.jour(); };
+    },
+    async mois() {
+      const [a, m] = (etat.moisPresence || auj.slice(0, 7)).split("-").map(Number);
+      const l = await appeler("presence_mois", { p_annee: a, p_mois: m }) || [];
+      const titre = `Présences — ${MOIS[m - 1]} ${a}`;
+      zone.innerHTML = `<div class="outils"><label for="pm-mois" style="margin:0">Mois</label><input type="month" id="pm-mois" value="${a}-${String(m).padStart(2, "0")}" style="width:auto">
+        <button class="btn pousse" id="pm-imp">Imprimer</button></div>
+        <div class="defil"><table><thead><tr><th>Salarié</th><th class="montant">Jours attendus</th><th class="montant">Présent</th><th class="montant">Retards</th><th class="montant">Minutes de retard</th>
+          <th class="montant">Absences</th><th class="montant">Congés</th><th class="montant">Départ non pointé</th><th class="montant">Heures</th></tr></thead><tbody>
+        ${l.map(x => `<tr><td><b>${esc(x.nom)}</b><div class="discret petit">${esc(x.matricule)} · ${esc(x.departement || "")}</div></td><td class="montant">${x.jours_attendus}</td>
+          <td class="montant">${x.presents}</td><td class="montant">${x.retards || ""}</td><td class="montant">${x.minutes_retard || ""}</td>
+          <td class="montant ${x.absences ? "negatif" : ""}">${x.absences || ""}</td><td class="montant">${x.conges || ""}</td><td class="montant">${x.sans_depart || ""}</td>
+          <td class="montant">${qte(x.heures)}</td></tr>`).join("")}</tbody></table></div>`;
+      $("#pm-mois").onchange = e => { etat.moisPresence = e.target.value; vues.mois(); };
+      $("#pm-imp").onclick = () => imprimerHtml(titre, `<style>@page{size:A4 landscape;margin:.8cm}body{max-width:none!important;margin:0!important;padding:0!important}
+          .pr td,.pr th{font-size:10px;padding:.2rem .35rem;white-space:nowrap}.pr tr:nth-child(even) td{background:#F4F6F9}</style>
+        <h1>${esc(titre)}</h1><p class="discret">Jours attendus : selon les horaires, hors jours fériés · arrêté au ${esc(dateCourte(auj))}</p>
+        <table class="pr"><thead><tr><th>Matr.</th><th>Nom</th><th>Département</th><th>Attendus</th><th>Présent</th><th>Retards</th><th>Min. retard</th><th>Absences</th><th>Congés</th><th>Départ non pointé</th><th>Heures</th></tr></thead>
+        <tbody>${l.map(x => `<tr><td>${esc(x.matricule)}</td><td>${esc(x.nom)}</td><td>${esc(x.departement || "")}</td><td style="text-align:right">${x.jours_attendus}</td><td style="text-align:right">${x.presents}</td>
+          <td style="text-align:right">${x.retards}</td><td style="text-align:right">${x.minutes_retard}</td><td style="text-align:right">${x.absences}</td><td style="text-align:right">${x.conges}</td>
+          <td style="text-align:right">${x.sans_depart}</td><td style="text-align:right">${qte(x.heures)}</td></tr>`).join("")}</tbody></table>
+        <table style="margin-top:1.5rem;border:none;width:60%"><tr><td style="border:none">Établi par</td><td style="border:none">Visa du DAF</td></tr></table>`);
+    },
+    async bureaux() {
+      const { data: sites, error } = await sb.from("sites").select("*").order("libelle"); if (error) throw error;
+      zone.innerHTML = `<p class="discret" style="margin:1rem">Enregistrez la position de chaque bureau <b>sur place, depuis votre téléphone</b>, localisation activée : la précision doit être de 50 m ou mieux.
+        ${peut(GESTION) ? `Un bureau manque ? <button class="btn-lien" id="b-site">Ajouter un bureau</button>` : "Pour ajouter un bureau, adressez-vous au DAF."}</p>
+        <div class="defil"><table><thead><tr><th>Bureau</th><th>Adresse</th><th>Position</th><th class="montant">Rayon</th><th></th></tr></thead><tbody>
+        ${(sites || []).map(s => `<tr><td><b>${esc(s.libelle)}</b><div class="discret petit">${esc(s.type || "")}${s.actif ? "" : " · inactif"}</div></td><td>${esc([s.adresse, s.ville].filter(Boolean).join(", "))}</td>
+          <td>${s.latitude != null ? `<span class="pastille ok">Enregistrée</span><div class="discret petit">± ${esc(s.precision_m)} m · ${esc(dateCourte(String(s.position_le).slice(0, 10)))}
+            · <a href="https://www.openstreetmap.org/?mlat=${s.latitude}&mlon=${s.longitude}#map=18/${s.latitude}/${s.longitude}" target="_blank" rel="noopener">voir</a></div>` : `<span class="pastille alerte">À enregistrer</span>`}</td>
+          <td class="montant">${gere ? `<input type="number" data-rayon="${s.id}" value="${esc(s.rayon_m)}" min="20" max="1000" step="10" style="width:5.5rem" aria-label="Rayon en mètres"> m` : esc(s.rayon_m) + " m"}</td>
+          <td>${gere ? `<button class="btn btn-principal" data-pos="${s.id}">${ic("repere", 15)} Enregistrer ma position ici</button>` : ""}</td></tr>`).join("")
+          || `<tr><td colspan="5" class="vide">Aucun bureau déclaré.</td></tr>`}</tbody></table></div><p id="pos-etat" class="petit" style="margin:1rem"></p>`;
+      if ($("#b-site")) $("#b-site").onclick = async () => { await chargerListe("activites"); formulaireEntite("sites", null, sites, () => vues.bureaux()); };
+      $$("[data-pos]").forEach(b => b.onclick = async () => {
+        const s = sites.find(x => x.id === b.dataset.pos);
+        if (!confirm(`Êtes-vous en ce moment dans le bureau « ${s.libelle} » ? Sa position sera celle de votre téléphone.`)) return;
+        b.disabled = true; $("#pos-etat").textContent = "Localisation en cours…";
+        try {
+          const c = await maPosition();
+          await appeler("enregistrer_position_site", { p_site: s.id, p_lat: c.latitude, p_lng: c.longitude, p_precision: c.accuracy });
+          toast(`Position de « ${s.libelle} » enregistrée (± ${Math.round(c.accuracy)} m).`); vues.bureaux();
+        } catch (err) { b.disabled = false; $("#pos-etat").innerHTML = `<span class="erreur" style="display:block">${esc(messageErreur(err))}</span>`; }
+      });
+      $$("[data-rayon]").forEach(i => i.onchange = async () => {
+        try { await appeler("regler_rayon_site", { p_site: i.dataset.rayon, p_rayon: Number(i.value) }); toast("Rayon enregistré."); } catch (e) { toast(messageErreur(e), true); }
+      });
+    },
+    async missions() {
+      const { data: ms, error } = await sb.from("missions_pointage").select("*").order("date_debut", { ascending: false }).limit(100); if (error) throw error;
+      const nom = id => (etat.refs.salaries_liste.find(s => s.id === id) || {});
+      zone.innerHTML = `${gere ? `<div class="outils"><button class="btn btn-principal" id="b-mission">Déclarer une mission</button>
+          <span class="discret petit">Les jours de mission, le salarié pointe d'où il est (position enregistrée).</span></div>` : ""}
+        <div class="defil"><table><thead><tr><th>Salarié</th><th>Du</th><th>Au</th><th>Motif</th><th></th></tr></thead><tbody>
+        ${(ms || []).map(x => `<tr><td>${esc(LISTES.salaries_liste.lib(nom(x.salarie_id)))}</td><td class="code">${esc(dateCourte(x.date_debut))}</td><td class="code">${esc(dateCourte(x.date_fin))}</td>
+          <td>${esc(x.motif)}</td><td>${gere && x.date_fin >= auj ? `<button class="btn" data-suppm="${x.id}">Supprimer</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="5" class="vide">Aucune mission déclarée.</td></tr>`}</tbody></table></div>`;
+      if ($("#b-mission")) $("#b-mission").onclick = () => ouvrirModale("Déclarer une mission", `<label for="mi-sal">Salarié *</label><select id="mi-sal">${optionsRef("salaries_liste", null)}</select>
+        <div class="grille2"><div><label for="mi-d">Du *</label><input type="date" id="mi-d" value="${auj}"></div><div><label for="mi-f">Au *</label><input type="date" id="mi-f" value="${auj}"></div></div>
+        <label for="mi-m">Motif *</label><input id="mi-m" placeholder="Ex. : livraison à Yaoundé, salon, rendez-vous client">`, {
+        onSave: async () => {
+          const d = { salarie_id: $("#mi-sal").value, date_debut: $("#mi-d").value, date_fin: $("#mi-f").value, motif: $("#mi-m").value.trim() };
+          if (!d.salarie_id || !d.date_debut || !d.date_fin || !d.motif) return "Tous les champs sont obligatoires.";
+          const { error: e } = await sb.from("missions_pointage").insert(d); if (e) return messageErreur(e);
+          toast("Mission déclarée."); vues.missions();
+        } });
+      $$("[data-suppm]").forEach(b => b.onclick = async () => { if (!confirm("Supprimer cette mission ?")) return;
+        const { error: e } = await sb.from("missions_pointage").delete().eq("id", b.dataset.suppm); e ? toast(messageErreur(e), true) : vues.missions(); });
+    },
+    async corrections() {
+      zone.innerHTML = `<div style="padding:1rem;max-width:560px"><p class="discret">Pour un oubli ou un téléphone en panne : la correction est tracée (auteur, motif) et marquée « corrigé ». Un pointage fait depuis le téléphone ne se remplace pas.</p>
+        <label for="co-sal">Salarié *</label><select id="co-sal">${optionsRef("salaries_liste", null)}</select>
+        <div class="grille2"><div><label for="co-j">Jour *</label><input type="date" id="co-j" value="${auj}"></div>
+          <div><label for="co-t">Pointage *</label><select id="co-t"><option>Arrivée</option><option>Départ</option></select></div>
+          <div><label for="co-h">Heure *</label><input type="time" id="co-h"></div></div>
+        <label for="co-m">Motif *</label><input id="co-m" placeholder="Ex. : téléphone déchargé, oubli signalé par le responsable">
+        <p style="margin-top:1rem"><button class="btn btn-principal" id="co-ok">Enregistrer la correction</button></p></div>`;
+      $("#co-ok").onclick = async () => {
+        try { await appeler("pointage_manuel", { p_salarie: $("#co-sal").value || null, p_jour: $("#co-j").value || null, p_type: $("#co-t").value, p_heure: $("#co-h").value || null, p_motif: $("#co-m").value.trim() }); }
+        catch (err) { return toast(messageErreur(err), true); }
+        toast("Correction enregistrée."); $("#co-m").value = ""; $("#co-h").value = "";
+      };
+    },
+    async horaires() {
+      const [{ data: pe }, { data: fe }] = await Promise.all([sb.from("parametres_entite").select("horaires, tolerance_retard_min").eq("id", 1).maybeSingle(),
+        sb.from("jours_feries").select("*").gte("jour", auj.slice(0, 4) + "-01-01").order("jour")]);
+      const h = (pe || {}).horaires || {};
+      zone.innerHTML = `<div class="deux-col" style="padding:1rem;gap:1.5rem">
+        <section><h3>Horaires de travail</h3><table><thead><tr><th>Jour</th><th>Travaillé</th><th>Début</th><th>Fin</th></tr></thead><tbody>
+          ${[1, 2, 3, 4, 5, 6, 7].map(d => `<tr><td>${JOURS_SEMAINE[d]}</td><td><input type="checkbox" data-hj="${d}" ${h[d] ? "checked" : ""} aria-label="${JOURS_SEMAINE[d]} travaillé"></td>
+            <td><input type="time" data-hd="${d}" value="${esc((h[d] || [])[0] || "08:00")}"></td><td><input type="time" data-hf="${d}" value="${esc((h[d] || [])[1] || "17:00")}"></td></tr>`).join("")}</tbody></table>
+          <label for="ho-tol">Tolérance de retard (minutes)</label><input type="number" id="ho-tol" min="0" max="120" value="${esc((pe || {}).tolerance_retard_min ?? 15)}" style="width:6rem">
+          <p><button class="btn btn-principal" id="ho-ok">Enregistrer les horaires</button></p></section>
+        <section><h3>Jours fériés</h3><p class="discret petit">Les fêtes à date fixe sont déjà inscrites ; ajoutez Vendredi saint, Ascension, Fête du mouton, Fête de fin du ramadan… dès que leur date est connue.</p>
+          <ul class="points">${(fe || []).map(f => `<li><p><b>${esc(dateCourte(f.jour))}</b> — ${esc(f.libelle)}</p><button class="btn" data-suppf="${esc(f.jour)}">Retirer</button></li>`).join("") || `<li><p class="vide">Aucun.</p></li>`}</ul>
+          <div class="grille2"><div><label for="fe-j">Date</label><input type="date" id="fe-j"></div><div><label for="fe-l">Fête</label><input id="fe-l"></div></div>
+          <p><button class="btn" id="fe-ok">Ajouter le jour férié</button></p></section></div>`;
+      $("#ho-ok").onclick = async () => {
+        const hor = {}; for (let d = 1; d <= 7; d++) if ($(`[data-hj="${d}"]`).checked) hor[d] = [$(`[data-hd="${d}"]`).value, $(`[data-hf="${d}"]`).value];
+        try { await appeler("regler_horaires", { p_horaires: hor, p_tolerance: Number($("#ho-tol").value || 0) }); toast("Horaires enregistrés."); } catch (e) { toast(messageErreur(e), true); }
+      };
+      $("#fe-ok").onclick = async () => { if (!$("#fe-j").value || !$("#fe-l").value.trim()) return toast("Indiquez la date et la fête.", true);
+        const { error: e } = await sb.from("jours_feries").insert({ jour: $("#fe-j").value, libelle: $("#fe-l").value.trim() }); e ? toast(messageErreur(e), true) : vues.horaires(); };
+      $$("[data-suppf]").forEach(b => b.onclick = async () => { const { error: e } = await sb.from("jours_feries").delete().eq("jour", b.dataset.suppf); e ? toast(messageErreur(e), true) : vues.horaires(); });
+    }
+  };
+  const afficher = async () => { zone.innerHTML = `<p class="discret" style="margin:1rem">Chargement…</p>`; try { await vues[onglet](); } catch (err) { zone.innerHTML = `<div class="erreur" style="margin:1rem">${esc(messageErreur(err))}</div>`; } };
+  $$("[data-onglet]").forEach(b => b.onclick = () => { onglet = etat.ongletPresences = b.dataset.onglet; $$("[data-onglet]").forEach(x => x.setAttribute("aria-selected", String(x === b))); afficher(); });
+  afficher();
+}
+
 const PAGES_FINANCES = {
   personnel: pagePersonnel,
   mon_dossier: () => pageMonEspace("dossier"), mes_conges: () => pageMonEspace("conges"), mes_bulletins: () => pageMonEspace("bulletins"),
   mes_demandes: () => pageMonEspace("demandes"), mes_evaluations: () => pageMonEspace("evaluations"), mon_equipe: pageMonEquipe,
-  mes_besoins: () => pageMonEspace("besoins"), fiches_besoin: pageFichesBesoin,
+  mes_besoins: () => pageMonEspace("besoins"), fiches_besoin: pageFichesBesoin, mon_pointage: pageMonPointage, presences: pagePresences,
   demandes_personnel: pageDemandesPersonnel, evaluations: pageEvaluations,
   etalements: pageEtalements,
   tableau_de_bord: pageTableauDeBord, etats: pageEtats, analytique: pageAnalytique, budget: pageBudget,
@@ -8086,6 +8300,8 @@ const compterJoursOuvrables = (a, b) => { if (!a || !b || b < a) return 0; let n
 
 async function chargerMonEspace() {
   try { etat.monEspace = await appeler("mon_espace"); } catch (e) { etat.monEspace = null; }
+  etat.monPointage = null;
+  if (etat.monEspace) try { etat.monPointage = await appeler("mon_pointage"); } catch (e) { /* lot 12 absent */ }
   // Fiches de besoin : les siennes (à justifier, à corriger) et celles de l'équipe à viser.
   etat.mesFiches = []; etat.fichesEquipe = [];
   if (etat.monEspace) try {
@@ -8104,6 +8320,9 @@ function rappelsEspace() {
   if (r.demandes_a_viser) pts.push({ texte: `<b>${r.demandes_a_viser} demande(s) de votre équipe</b> (formation, avance) attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
   if (r.evaluations_a_faire) pts.push({ texte: `<b>${r.evaluations_a_faire} évaluation(s) annuelle(s)</b> de votre équipe sont à conduire.`, page: "mon_equipe", bouton: "Évaluer" });
   if (r.reponses) pts.push({ texte: `<b>${r.reponses} réponse(s)</b> à vos demandes ces 7 derniers jours.`, page: "mes_demandes", bouton: "Voir" });
+  const mp = etat.monPointage;
+  if (mp && mp.bureaux && mp.horaires && !mp.ferie && !(mp.pointages || []).some(x => x.jour === mp.aujourdhui && x.type === "Arrivée"))
+    pts.push({ texte: `<b>Vous n'avez pas encore pointé votre arrivée</b> aujourd'hui (horaires ${mp.horaires[0]} – ${mp.horaires[1]}).`, page: "mon_pointage", bouton: "Pointer" });
   const mf = etat.mesFiches || [], aJust = mf.filter(f => f.statut === "Payée");
   if (aJust.length) pts.push({ texte: `<b>${aJust.length} fiche(s) de besoin payée(s)</b> à justifier${aJust.some(f => f.en_retard) ? " — délai de 48 heures dépassé" : " sous 48 heures"} : photo du reçu et montant dépensé.`, page: "mes_besoins", bouton: "Justifier" });
   const aCorr = mf.filter(f => f.statut === "À corriger").length;
@@ -8401,7 +8620,7 @@ async function pageMonEquipe() {
   const m = await chargerMonEspace();
   if (!m || !(m.equipe || []).length) { $("#contenu").innerHTML = `<div class="vide">Aucun salarié ne vous est rattaché.</div>`; return; }
   majCloche();
-  const [conges, demandes, evals] = await Promise.all([appeler("equipe_conges"), appeler("equipe_demandes"), appeler("mes_evaluations")]);
+  const [conges, demandes, evals, presents] = await Promise.all([appeler("equipe_conges"), appeler("equipe_demandes"), appeler("mes_evaluations"), appeler("presence_equipe").catch(() => [])]);
   const aConduire = (evals || []).filter(x => x.place === "evaluateur");
   const avis = (rpc, id, favorable) => async () => {
     const commentaire = favorable ? (prompt("Commentaire (facultatif) :") ?? null) : prompt("Motivez votre avis défavorable :");
@@ -8415,6 +8634,9 @@ async function pageMonEquipe() {
       ${m.equipe.map(e => `<tr><td><b>${esc(nomPersonne(e))}</b> <span class="discret petit">${esc(e.matricule)}</span></td><td>${esc(e.emploi || "")}</td>
         <td>${e.en_conge ? `<span class="pastille attente">en congé</span>` : `<span class="pastille ${CLASSE_STATUT_PERSO[e.statut] || ""}">${esc(e.statut || "")}</span>`}</td>
         <td>${esc(e.telephone || "")}</td></tr>`).join("")}</tbody></table></div>
+    <h2 class="titre-section">Présence aujourd'hui</h2><div class="panneau defil"><table><thead><tr><th>Salarié</th><th>Arrivée</th><th>Départ</th><th>Lieu</th></tr></thead><tbody>
+      ${(presents || []).map(x => `<tr><td>${esc(x.nom)}<div class="discret petit">${esc(x.emploi || "")}</div></td><td class="code">${esc(heureCourte(x.arrivee) || "—")}</td>
+        <td class="code">${esc(heureCourte(x.depart) || "—")}</td><td>${esc(x.hors_bureau || (x.arrivee ? "Bureau" : ""))}</td></tr>`).join("") || `<tr><td colspan="4" class="vide">—</td></tr>`}</tbody></table></div>
     <h2 class="titre-section">Congés</h2><div class="panneau defil"><table><thead><tr><th>Salarié</th><th>Type</th><th>Du</th><th>Au</th><th class="montant">Jours</th><th class="montant">Solde</th><th>Statut</th><th></th></tr></thead><tbody>
       ${(conges || []).map(x => { const c = x.conge; return `<tr><td>${esc(x.nom)}</td><td>${esc(c.type)}${c.motif ? `<div class="discret petit">${esc(c.motif)}</div>` : ""}</td>
         <td class="code">${esc(dateCourte(c.date_debut))}</td><td class="code">${esc(dateCourte(c.date_fin))}</td><td class="montant">${qte(c.jours)}</td><td class="montant">${qte(x.reste)}</td>
