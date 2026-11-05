@@ -438,7 +438,7 @@ const LISTES = {
   departements: { select: "id, code, libelle, actif", ordre: "libelle", lib: r => r.libelle },
   categories_produit: { select: "id, code, libelle, manager_id", ordre: "libelle", lib: r => r.libelle },
   fournisseurs: { select: "id, code, nom, actif", ordre: "nom", lib: r => `${r.nom} (${r.code})` },
-  comptes_tresorerie: { select: "id, code, libelle, type, compte, actif", ordre: "code", lib: r => `${r.code} – ${r.libelle}` },
+  comptes_tresorerie: { select: "id, code, libelle, type, compte, actif, responsable_id", ordre: "code", lib: r => `${r.code} – ${r.libelle}` },
   categories_op: { table: "categories_operation", select: "id, code, libelle, groupe, nature, compte, exige_site, exige_vehicule, aide, actif",
     ordre: "libelle", lib: r => r.libelle },
   vehicules: { select: "id, code, libelle, actif", ordre: "code", lib: r => r.libelle },
@@ -719,6 +719,7 @@ const NAV = [
   { id: "fiches_besoin", l: "Fiches de besoin", roles: ["controleur", "daf", "admin", "auditeur", "dg", "tresorier", "caissier", "comptable"] },
   { id: "tresorerie", l: "Trésorerie", roles: [...FINANCE, "caissier"] },
   { id: "situation_tresorerie", l: "Situation de trésorerie", roles: FINANCE },
+  { id: "arretes_caisse", l: "Arrêtés de caisse", roles: ["daf", "admin", "tresorier", "comptable", "auditeur", "dg", "controleur", "caissier"] },
   { id: "dettes", l: "Dettes fournisseurs", roles: FINANCE },
   { id: "consultation", l: "Consultation par période", roles: FINANCE },
   { id: "rapprochements", l: "Rapprochements bancaires", roles: FINANCE },
@@ -1099,7 +1100,7 @@ const ICONE_PAGE = {
   categories_operation: "etiquette", plan_comptable: "liste", activites: "mallette", sites: "repere", vehicules: "voiture", comptes_tresorerie: "banque",
   parametres: "reglages", utilisateurs: "bouclier", postes: "mallette", journal: "historique", profil: "personne",
   mon_dossier: "personne", mes_conges: "calendrier", mes_bulletins: "billet", mes_demandes: "document", mes_evaluations: "cible", mon_equipe: "groupe",
-  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe", mon_pointage: "repere", presences: "historique"
+  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe", mon_pointage: "repere", presences: "historique", arretes_caisse: "pieces"
 };
 const initiales = p => ((p.prenom || "").trim()[0] || "") + ((p.nom || "").trim()[0] || "") || (p.email || "?")[0];
 
@@ -2111,6 +2112,20 @@ async function aFaireFinances() {
     const ne = await compter(sb.from("evaluations").select("id", { count: "exact", head: true }).in("statut", ["Évaluée", "Signée"]));
     if (ne) pts.push({ texte: `<b>${ne} évaluation(s) annuelle(s)</b> faites par les responsables sont à clôturer.`, page: "evaluations", bouton: "Clôturer" });
   }
+  try {
+    if (peut(VALIDATION)) {
+      const n = await compter(sb.from("arretes_caisse").select("id", { count: "exact", head: true }).eq("statut", "Écart à traiter"));
+      if (n) pts.push({ texte: `<b>${n} écart(s) de caisse</b> attendent votre décision.`, page: "arretes_caisse", param: { onglet: "ecarts" }, bouton: "Décider" });
+    }
+    const heure = Number(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", timeZone: "Africa/Douala" }).slice(0, 2));
+    const mesCaisses = (await sb.from("comptes_tresorerie").select("id, libelle").eq("type", "Caisse").eq("actif", true).eq("responsable_id", moi)).data || [];
+    if (heure >= 16 && mesCaisses.length) {
+      const auj = new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Douala" });
+      const { data: faits } = await sb.from("arretes_caisse").select("compte_tresorerie_id").eq("date_arrete", auj).neq("statut", "Annulé");
+      const restent = mesCaisses.filter(c => !(faits || []).some(f => f.compte_tresorerie_id === c.id));
+      if (restent.length) pts.push({ texte: `<b>Arrêté de caisse du jour à faire</b> : ${esc(restent.map(c => c.libelle).join(", "))}. Comptez par coupure et signez.`, page: "arretes_caisse", bouton: "Arrêter" });
+    }
+  } catch (e) { /* lot 13 absent */ }
   if (peut(BESOINS_LECTEURS)) {
     const { data: fb } = await sb.from("v_fiches_besoin").select("statut, en_retard").in("statut", ["Visée", "Contrôlée", "Validée", "Payée", "Justifiée", "Monnaie à rendre"]);
     const nb = st => (fb || []).filter(f => f.statut === st).length;
@@ -7654,11 +7669,128 @@ async function pagePresences() {
   afficher();
 }
 
+/* =====================================================================
+   Lot 13 — Arrêté de caisse quotidien
+   Le responsable de la caisse compte par coupure et signe ; l'écart avec le
+   solde théorique part au DAF, qui décide (manquant imputé au caissier, perte
+   ou gain de caisse). Une caisse arrêtée n'accepte plus d'opération à cette
+   date ou avant (journée close).
+   ===================================================================== */
+const ARRETES_LECTEURS = ["daf", "admin", "tresorier", "comptable", "auditeur", "dg", "controleur", "caissier"];
+const COUPURES = [["B10000", "Billet de 10 000", 10000], ["B5000", "Billet de 5 000", 5000], ["B2000", "Billet de 2 000", 2000], ["B1000", "Billet de 1 000", 1000],
+  ["B500", "Billet de 500", 500], ["P500", "Pièce de 500", 500], ["P100", "Pièce de 100", 100], ["P50", "Pièce de 50", 50], ["P25", "Pièce de 25", 25],
+  ["P10", "Pièce de 10", 10], ["P5", "Pièce de 5", 5], ["P2", "Pièce de 2", 2], ["P1", "Pièce de 1", 1]];
+const CLASSE_ARRETE = { Conforme: "ok", "Écart à traiter": "alerte", "Écart traité": "attente", "Annulé": "inactif" };
+const ecartTexte = e => Number(e) === 0 ? "aucun écart" : Number(e) < 0 ? `manquant de ${fcfa(-e)} FCFA` : `excédent de ${fcfa(e)} FCFA`;
+
+function imprimerArrete(a, caisse) {
+  const b = a.billetage || {};
+  imprimerHtml(`Arrêté de caisse ${a.numero}`, `<h1 style="text-align:center">ARRÊTÉ DE CAISSE</h1>
+    <p style="text-align:center" class="discret">N° ${esc(a.numero)} · ${esc(caisse)} · journée du ${esc(dateLongue(a.date_arrete))}</p>
+    <h2>Billetage</h2>
+    <table><thead><tr><th>Coupure</th><th style="text-align:right">Nombre</th><th style="text-align:right">Montant</th></tr></thead>
+      <tbody>${COUPURES.filter(([k]) => Number(b[k])).map(([k, l, v]) => `<tr><td>${esc(l)}</td><td style="text-align:right">${qte(b[k])}</td><td style="text-align:right">${fcfa(b[k] * v)}</td></tr>`).join("")
+        || `<tr><td colspan="3">Caisse vide</td></tr>`}</tbody></table>
+    <table style="margin-top:.8rem"><tr><th style="width:50%">Solde théorique (comptabilité)</th><td style="text-align:right">${fcfa(a.solde_theorique)} FCFA</td></tr>
+      <tr><th>Montant compté</th><td style="text-align:right"><b>${fcfa(a.montant_compte)} FCFA</b></td></tr>
+      <tr><th>Écart</th><td style="text-align:right"><b>${esc(ecartTexte(a.ecart))}</b></td></tr></table>
+    <p>Arrêté le présent état de caisse à la somme de <b>${esc(enLettres(Number(a.montant_compte)))} francs CFA</b>.</p>
+    ${a.observation ? `<p><b>Observation du caissier :</b> ${esc(a.observation)}</p>` : ""}
+    ${a.decision ? `<p><b>Décision du DAF</b> (${esc(quandHeure(a.decision_le))}) : ${esc(a.decision)}${a.decision_commentaire ? " — " + esc(a.decision_commentaire) : ""}</p>` : ""}
+    ${a.statut === "Annulé" ? `<p style="color:#B42318"><b>ARRÊTÉ ANNULÉ</b> : ${esc(a.motif_annulation || "")}</p>` : ""}
+    <table style="margin-top:1rem"><tr><td style="width:50%;vertical-align:top"><b>Le caissier</b><br><img src="${a.signature_caissier}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">
+      ${esc(nomProfil(a.caissier_id))}<br><span class="discret">Signé électroniquement le ${esc(quandHeure(a.signe_le))}</span></td>
+      <td style="width:50%;vertical-align:top"><b>Visa du DAF</b></td></tr></table>`);
+}
+
+async function pageArretesCaisse() {
+  await chargerRefsFinance();
+  const { data, error } = await sb.from("arretes_caisse").select("*").order("date_arrete", { ascending: false }).order("created_at", { ascending: false }).limit(200);
+  if (error) throw error;
+  const arretes = data || [], daf = peut(VALIDATION);
+  const caisses = (etat.refs.comptes_tresorerie || []).filter(c => c.type === "Caisse" && c.actif !== false
+    && (c.responsable_id === etat.profil.id || !c.responsable_id && peut(["tresorier", "daf", "admin"])));
+  const libCaisse = id => (caisses.find(c => c.id === id) || (etat.refs.comptes_tresorerie || []).find(c => c.id === id) || {}).libelle || "";
+  const aTraiter = arretes.filter(a => a.statut === "Écart à traiter");
+  let onglet = etat.param.onglet || etat.ongletArretes || (daf && aTraiter.length ? "ecarts" : "arreter");
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Arrêtés de caisse</h1>
+      <p class="discret">Chaque soir, le responsable de la caisse compte par coupure et signe. Un écart part au DAF. Une caisse arrêtée n'accepte plus d'opération à cette date ou avant.</p></div></div>
+    <div class="panneau"><div class="onglets" role="tablist">${[["arreter", "Arrêter une caisse"], ["historique", "Historique"], ["ecarts", `Écarts à traiter${aTraiter.length ? ` (${aTraiter.length})` : ""}`]]
+      .map(([k, l]) => `<button role="tab" data-onglet="${k}" aria-selected="${k === onglet}">${esc(l)}</button>`).join("")}</div><div id="zone"></div></div>`;
+  const zone = $("#zone"), auj = new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Douala" });
+  const tableau = liste => `<div class="defil"><table><thead><tr><th>N°</th><th>Journée</th><th>Caisse</th><th class="montant">Théorique</th><th class="montant">Compté</th><th class="montant">Écart</th><th>Statut</th><th></th></tr></thead><tbody>
+    ${liste.map(a => `<tr><td class="code">${esc(a.numero)}</td><td class="code">${esc(dateCourte(a.date_arrete))}</td><td>${esc(libCaisse(a.compte_tresorerie_id))}<div class="discret petit">${esc(nomProfil(a.caissier_id))}</div></td>
+      <td class="montant">${fcfa(a.solde_theorique)}</td><td class="montant">${fcfa(a.montant_compte)}</td><td class="montant ${Number(a.ecart) < 0 ? "negatif" : ""}">${Number(a.ecart) ? fcfa(a.ecart) : "—"}</td>
+      <td><span class="pastille ${CLASSE_ARRETE[a.statut] || ""}">${esc(a.statut)}</span>${a.decision ? `<div class="discret petit">${esc(a.decision)}</div>` : ""}</td>
+      <td><div class="actions-ligne"><button class="btn" data-imp="${a.id}">Imprimer</button>
+        ${daf && a.statut === "Écart à traiter" ? `<button class="btn btn-principal" data-traiter="${a.id}">Traiter l'écart</button>` : ""}
+        ${daf && a.statut !== "Annulé" ? `<button class="btn" data-annul="${a.id}">Annuler</button>` : ""}</div></td></tr>`).join("") || `<tr><td colspan="8" class="vide">Aucun arrêté.</td></tr>`}</tbody></table></div>`;
+  const brancherTableau = () => {
+    $$("[data-imp]", zone).forEach(b => b.onclick = () => { const a = arretes.find(x => x.id === b.dataset.imp); imprimerArrete(a, libCaisse(a.compte_tresorerie_id)); });
+    $$("[data-annul]", zone).forEach(b => b.onclick = async () => { const motif = prompt("Motif de l'annulation (ex. : erreur de comptage) :"); if (!motif) return;
+      try { await appeler("annuler_arrete_caisse", { p_arrete: b.dataset.annul, p_motif: motif }); toast("Arrêté annulé."); recharger(); } catch (err) { toast(messageErreur(err), true); } });
+    $$("[data-traiter]", zone).forEach(b => b.onclick = () => {
+      const a = arretes.find(x => x.id === b.dataset.traiter), manquant = Number(a.ecart) < 0;
+      ouvrirModale(`Écart de caisse — ${a.numero}`, `<p>${esc(libCaisse(a.compte_tresorerie_id))} · journée du ${esc(dateCourte(a.date_arrete))} · caissier : <b>${esc(nomProfil(a.caissier_id))}</b></p>
+        <p>Théorique <b>${fcfa(a.solde_theorique)}</b>, compté <b>${fcfa(a.montant_compte)}</b> : <b class="${manquant ? "negatif" : ""}">${esc(ecartTexte(a.ecart))}</b>.</p>
+        ${a.observation ? `<p class="petit">Observation du caissier : « ${esc(a.observation)} »</p>` : ""}
+        <label for="ec-dec">Décision *</label><select id="ec-dec">${manquant
+          ? `<option value="Imputé au caissier">Imputé au caissier (il le rembourse)</option><option value="Perte de caisse">Perte de caisse (charge de l'entreprise)</option>`
+          : `<option value="Gain de caisse">Gain de caisse (produit)</option>`}</select>
+        <label for="ec-com">Commentaire</label><input id="ec-com">
+        <p class="discret petit">La régularisation est passée au journal de la caisse, à la date de l'arrêté : le solde de la caisse devient égal au montant compté.</p>`, {
+        libelleSave: "Enregistrer la décision",
+        onSave: async () => { try { await appeler("traiter_ecart_caisse", { p_arrete: a.id, p_decision: $("#ec-dec").value, p_commentaire: $("#ec-com").value.trim() || null }); }
+          catch (err) { return messageErreur(err); } toast("Écart traité."); recharger(); } });
+    });
+  };
+  const vues = {
+    arreter() {
+      if (!caisses.length) { zone.innerHTML = `<div class="vide" style="margin:1rem">Aucune caisse ne vous est confiée.</div>`; return; }
+      zone.innerHTML = `<div style="padding:1rem;max-width:720px">
+        <div class="grille2"><div><label for="ar-c">Caisse *</label><select id="ar-c">${caisses.map(c => `<option value="${c.id}">${esc(LISTES.comptes_tresorerie.lib(c))}</option>`).join("")}</select></div>
+          <div><label for="ar-d">Journée *</label><input type="date" id="ar-d" value="${auj}" max="${auj}"></div></div>
+        <div class="fb-total" style="margin:.8rem 0"><span><small>Solde théorique (comptabilité)</small><b id="ar-theo">…</b></span>
+          <span><small>Compté</small><b id="ar-total">0</b></span><span><small>Écart</small><b id="ar-ecart">—</b></span></div>
+        <div class="defil"><table class="saisie"><thead><tr><th>Coupure</th><th>Nombre</th><th class="montant">Montant</th></tr></thead><tbody>
+          ${COUPURES.map(([k, l]) => `<tr><td>${esc(l)}</td><td><input type="number" min="0" step="1" inputmode="numeric" data-coupure="${k}" style="width:6rem" aria-label="${esc(l)}"></td><td class="montant" data-mt="${k}"></td></tr>`).join("")}</tbody></table></div>
+        <label for="ar-obs">Observation</label><input id="ar-obs" placeholder="Facultatif : explication d'un écart, remarque">
+        ${champSignature("sig-arrete", "Votre signature *")}
+        <p style="margin-top:1rem"><button class="btn btn-principal" id="ar-ok">Signer et arrêter la caisse</button></p>
+        <p class="discret petit">Après l'arrêté, plus aucune opération ne peut être enregistrée dans cette caisse à cette date ou avant.</p></div>`;
+      brancherSignature("sig-arrete");
+      let theo = null;
+      const calc = () => { let t = 0; COUPURES.forEach(([k, , v]) => { const n = Number($(`[data-coupure="${k}"]`).value || 0); t += n * v; $(`[data-mt="${k}"]`).textContent = n ? fcfa(n * v) : ""; });
+        $("#ar-total").textContent = fcfa(t) + " FCFA";
+        const e = theo == null ? null : t - theo; $("#ar-ecart").textContent = e == null ? "—" : e === 0 ? "aucun" : (e > 0 ? "+" : "") + fcfa(e) + " FCFA";
+        $("#ar-ecart").className = e ? "negatif" : ""; return t; };
+      const chargerTheo = async () => { $("#ar-theo").textContent = "…"; try { theo = Number(await appeler("solde_caisse", { p_compte: $("#ar-c").value, p_date: $("#ar-d").value })); $("#ar-theo").textContent = fcfa(theo) + " FCFA"; }
+        catch (err) { theo = null; $("#ar-theo").textContent = "?"; toast(messageErreur(err), true); } calc(); };
+      $$("[data-coupure]").forEach(i => i.oninput = calc);
+      $("#ar-c").onchange = chargerTheo; $("#ar-d").onchange = chargerTheo; chargerTheo();
+      $("#ar-ok").onclick = async () => {
+        const sig = signatureDe("sig-arrete"); if (!sig) return toast("Signez l'arrêté de caisse.", true);
+        const billetage = {}; COUPURES.forEach(([k]) => { const n = Number($(`[data-coupure="${k}"]`).value || 0); if (n) billetage[k] = n; });
+        const t = calc();
+        if (theo != null && t !== theo && !confirm(`Le comptage donne un ${ecartTexte(t - theo)}. Avez-vous bien recompté ? L'écart sera transmis au DAF.`)) return;
+        $("#ar-ok").disabled = true;
+        try { await appeler("arreter_caisse", { p_compte: $("#ar-c").value, p_date: $("#ar-d").value, p_billetage: billetage, p_signature: sig, p_observation: $("#ar-obs").value.trim() || null }); }
+        catch (err) { $("#ar-ok").disabled = false; return toast(messageErreur(err), true); }
+        toast(t === theo ? "Caisse arrêtée : conforme." : "Caisse arrêtée : l'écart est transmis au DAF."); etat.ongletArretes = "historique"; recharger();
+      };
+    },
+    historique() { zone.innerHTML = tableau(arretes); brancherTableau(); },
+    ecarts() { zone.innerHTML = tableau(aTraiter); brancherTableau(); }
+  };
+  $$("[data-onglet]").forEach(b => b.onclick = () => { onglet = etat.ongletArretes = b.dataset.onglet; $$("[data-onglet]").forEach(x => x.setAttribute("aria-selected", String(x === b))); vues[onglet](); });
+  vues[onglet]();
+}
+
 const PAGES_FINANCES = {
   personnel: pagePersonnel,
   mon_dossier: () => pageMonEspace("dossier"), mes_conges: () => pageMonEspace("conges"), mes_bulletins: () => pageMonEspace("bulletins"),
   mes_demandes: () => pageMonEspace("demandes"), mes_evaluations: () => pageMonEspace("evaluations"), mon_equipe: pageMonEquipe,
-  mes_besoins: () => pageMonEspace("besoins"), fiches_besoin: pageFichesBesoin, mon_pointage: pageMonPointage, presences: pagePresences,
+  mes_besoins: () => pageMonEspace("besoins"), fiches_besoin: pageFichesBesoin, mon_pointage: pageMonPointage, presences: pagePresences, arretes_caisse: pageArretesCaisse,
   demandes_personnel: pageDemandesPersonnel, evaluations: pageEvaluations,
   etalements: pageEtalements,
   tableau_de_bord: pageTableauDeBord, etats: pageEtats, analytique: pageAnalytique, budget: pageBudget,
