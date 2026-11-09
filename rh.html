@@ -307,6 +307,24 @@ svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
 .fb-pills input{position:absolute;opacity:0;pointer-events:none}
 .fb-pills label:has(input:checked){background:#2F5395;color:#fff;border-color:#2F5395}
 .fb-pills label.urgent:has(input:checked){background:#B42318;border-color:#B42318}
+.cl-page{display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start}
+.cl-cal{padding:.8rem}.cl-cal ol{list-style:none;margin:.6rem 0 0;padding:0;display:grid;gap:.2rem}
+.cl-m{width:100%;display:flex;justify-content:space-between;align-items:center;gap:.4rem;border:1px solid transparent;background:none;border-radius:8px;padding:.45rem .55rem;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.cl-m:hover{background:#F4F7FB}.cl-m.actif{border-color:var(--registre);background:var(--registre-clair)}
+.cl-titre{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}.cl-titre h2{margin:0}
+.cl-barre{height:8px;border-radius:99px;background:#ECEEF1;overflow:hidden;margin:.8rem 0 1rem}.cl-barre span{display:block;height:100%;background:var(--ambre);border-radius:99px}.cl-barre span.pret{background:var(--vert)}
+.cl-etape h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--encre-douce);margin:1.1rem 0 .4rem}
+.cl-ctrl{display:flex;gap:.7rem;align-items:flex-start;padding:.6rem .7rem;border:1px solid var(--trait);border-radius:10px;margin-bottom:.4rem}
+.cl-ctrl .cl-txt{flex:1;min-width:0}.cl-ctrl .actions-ligne{flex:none}
+.cl-ic{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.8rem}
+.cl-ctrl.ok .cl-ic{background:var(--vert-clair);color:var(--vert)}.cl-ctrl.ok{border-color:transparent;background:#FAFBFC}
+.cl-ctrl.bloquant .cl-ic{background:var(--rouge-clair);color:var(--rouge)}.cl-ctrl.bloquant{border-color:#F3C5C0}
+.cl-ctrl.attention .cl-ic{background:var(--ambre-clair);color:var(--ambre)}
+.cl-synth{display:grid;grid-template-columns:3fr 2fr;gap:1rem;margin-top:.8rem}.cl-synth td .discret{display:block}
+.cl-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem}
+.cl-kpi{background:#F4F7FB;border-radius:10px;padding:.7rem .9rem;display:flex;flex-direction:column}.cl-kpi b{font-size:1.25rem;font-variant-numeric:tabular-nums}.cl-kpi small{color:var(--encre-douce)}
+.cl-final{margin-top:1.4rem;border-top:1px solid var(--trait);padding-top:1rem}.cl-com{background:#F4F7FB;border-radius:10px;padding:.7rem .9rem}
+@media (max-width:860px){.cl-page{grid-template-columns:1fr}.cl-synth{grid-template-columns:1fr}.cl-cal ol{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.cl-ctrl{flex-wrap:wrap}.cl-ctrl .actions-ligne{width:100%;justify-content:flex-start}}
 .fb-total{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;background:#F4F7FB;border-radius:10px;padding:.7rem 1rem;margin-top:.7rem}
 .fb-total b{font-size:1.4rem;white-space:nowrap}
 .fb-total small{color:#5A6675;display:block}
@@ -745,7 +763,7 @@ const NAV = [
   { id: "journaux", l: "Journaux", roles: FINANCE },
   { id: "grand_livre", l: "Grand livre", roles: FINANCE },
   { id: "balance", l: "Balance", roles: FINANCE },
-  { id: "periodes", l: "Périodes", roles: FINANCE },
+  { id: "periodes", l: "Clôture du mois", roles: [...FINANCE, "controleur"] },
   { id: "etalements", l: "Charges étalées", roles: FINANCE },
   { id: "reprise", l: "Reprise du classeur", roles: LECTEURS_REPRISE },
   { groupe: "Référentiels", roles: TOUS },
@@ -2126,6 +2144,13 @@ async function aFaireFinances() {
       if (restent.length) pts.push({ texte: `<b>Arrêté de caisse du jour à faire</b> : ${esc(restent.map(c => c.libelle).join(", "))}. Comptez par coupure et signez.`, page: "arretes_caisse", bouton: "Arrêter" });
     }
   } catch (e) { /* lot 13 absent */ }
+  try {
+    if (peut(VALIDATION) && Number(new Date().toLocaleDateString("fr-FR", { day: "numeric", timeZone: "Africa/Douala" })) >= 5) {
+      const { data: po } = await sb.from("periodes").select("annee, mois").eq("statut", "Ouverte").order("annee").order("mois").limit(1);
+      const p = (po || [])[0], auj = new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Douala" });
+      if (p && finDeMois(p.annee, p.mois) < auj.slice(0, 8) + "01") pts.push({ texte: `<b>Clôture de ${esc(nomMois(p.annee, p.mois).toLowerCase())}</b> à faire : l'assistant vérifie le mois point par point.`, page: "periodes", param: { mois: `${p.annee}-${p.mois}` }, bouton: "Clôturer" });
+    }
+  } catch (e) { /* lot 14 absent */ }
   if (peut(BESOINS_LECTEURS)) {
     const { data: fb } = await sb.from("v_fiches_besoin").select("statut, en_retard").in("statut", ["Visée", "Contrôlée", "Validée", "Payée", "Justifiée", "Monnaie à rendre"]);
     const nb = st => (fb || []).filter(f => f.statut === st).length;
@@ -3575,34 +3600,6 @@ async function pageBalance() {
     ["Compte", "Intitulé", "Ouverture débit", "Ouverture crédit", "Mouvements débit", "Mouvements crédit", "Clôture débit", "Clôture crédit"],
     visibles().map(c => [c.compte, c.libelle, ...colonnes(c).map(x => x || "")]), `Balance — ${$("#b-titre").textContent}`);
   await charger();
-}
-
-async function pagePeriodes() {
-  await chargerListe("profils_noms");
-  const { data, error } = await sb.from("periodes").select("*").order("annee").order("mois");
-  if (error) throw error;
-  const annees = [...new Set((data || []).map(p => p.annee))];
-  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Périodes comptables</h1>
-      <p class="discret">Un mois clôturé ne reçoit plus aucune écriture : ni opération, ni annulation, ni reclassement. Le DAF clôture les mois dans l'ordre ;
-      seul l'administrateur peut rouvrir un mois clos.</p></div></div>
-    ${annees.map(a => `<h2 class="titre-section">${a}</h2><div class="panneau defil"><table><thead><tr><th>Mois</th><th>Statut</th><th>Clôture</th><th></th></tr></thead>
-    <tbody>${data.filter(p => p.annee === a).map(p => `<tr><td>${MOIS[p.mois - 1]}</td>
-      <td><span class="pastille ${p.statut === "Ouverte" ? "" : "inactif"}">${esc(p.statut)}</span></td>
-      <td class="discret">${p.cloture_le ? esc(dateHeure(p.cloture_le)) + " · " + esc(nomProfil(p.cloture_par)) : ""}</td>
-      <td><div class="actions-ligne">${p.statut === "Ouverte" && peut(VALIDATION) ? `<button class="btn" data-cloturer="${a}-${p.mois}">Clôturer</button>` : ""}
-        ${p.statut !== "Ouverte" && peut(["admin"]) ? `<button class="btn" data-rouvrir="${a}-${p.mois}">Rouvrir</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>`).join("")}`;
-  $$("[data-cloturer]").forEach(b => b.onclick = async () => {
-    const [a, m] = b.dataset.cloturer.split("-").map(Number);
-    if (!confirm(`Clôturer ${MOIS[m - 1].toLowerCase()} ${a} ? Plus aucune écriture ne pourra y être passée.`)) return;
-    try { await appeler("cloturer_periode", { p_annee: a, p_mois: m }); } catch (err) { return toast(messageErreur(err), true); }
-    toast("Période clôturée."); recharger();
-  });
-  $$("[data-rouvrir]").forEach(b => b.onclick = async () => {
-    const [a, m] = b.dataset.rouvrir.split("-").map(Number);
-    if (!confirm(`Rouvrir ${MOIS[m - 1].toLowerCase()} ${a} ? La réouverture est tracée.`)) return;
-    try { await appeler("rouvrir_periode", { p_annee: a, p_mois: m }); } catch (err) { return toast(messageErreur(err), true); }
-    toast("Période rouverte."); recharger();
-  });
 }
 
 /* =====================================================================
@@ -7784,6 +7781,166 @@ async function pageArretesCaisse() {
   };
   $$("[data-onglet]").forEach(b => b.onclick = () => { onglet = etat.ongletArretes = b.dataset.onglet; $$("[data-onglet]").forEach(x => x.setAttribute("aria-selected", String(x === b))); vues[onglet](); });
   vues[onglet]();
+}
+
+/* =====================================================================
+   Lot 14 — Clôture du mois guidée
+   Liste de contrôles (bloquants / points d'attention), actions en un clic
+   (amortissements, charges étalées, stock), chiffres clés, commentaire,
+   dossier de clôture figé et imprimable. Réouverture par l'admin, motivée.
+   ===================================================================== */
+const fcfaBase = v => fcfa(v);
+const ACTIONS_CLOTURE = {
+  doter_amortissements: { l: "Passer les dotations", params: (a, m) => ({ p_annee: a, p_mois: m }) },
+  passer_etalements: { l: "Passer les quotes-parts", params: (a, m) => ({ p_annee: a, p_mois: m }) },
+  constater_stock: { l: "Constater le stock", params: (a, m) => ({ p_date: finDeMois(a, m) }) }
+};
+const nomMois = (a, m) => `${MOIS[m - 1]} ${a}`;
+const etatControle = c => c.ok ? "ok" : c.niveau === "Bloquant" ? "bloquant" : "attention";
+const ICONE_CTRL = { ok: "✓", bloquant: "✕", attention: "!" };
+
+function syntheseHtml(s) {
+  if (!s) return "";
+  const fcfa = v => fcfaBase(Number(v) || 0);
+  const k = (l, v, cl = "") => `<div class="cl-kpi"><small>${esc(l)}</small><b class="${cl}">${fcfa(v)}</b></div>`;
+  return `<div class="cl-kpis">
+      ${k("Chiffre d'affaires", s.chiffre_affaires)}${k("Charges", s.charges)}${k("Résultat du mois", s.resultat, Number(s.resultat) < 0 ? "negatif" : "")}
+      ${k("Trésorerie fin de mois", s.tresorerie_totale, Number(s.tresorerie_totale) < 0 ? "negatif" : "")}</div>
+    <div class="cl-synth">
+      <div class="defil"><table><thead><tr><th>Compte de trésorerie</th><th class="montant">Solde au dernier jour</th></tr></thead><tbody>
+        ${(s.tresorerie || []).map(t => `<tr><td>${esc(t.code)} <span class="discret petit">${esc(t.libelle)}</span></td><td class="montant ${Number(t.solde) < 0 ? "negatif" : ""}">${fcfa(t.solde)}</td></tr>`).join("")}</tbody></table></div>
+      <div class="defil"><table><tbody>
+        <tr><td>Achats de marchandises</td><td class="montant">${fcfa(s.achats_marchandises)}</td></tr>
+        <tr><td>Charges de personnel</td><td class="montant">${fcfa(s.charges_personnel)}</td></tr>
+        <tr><td>Stock (compte 31)</td><td class="montant">${fcfa(s.stock)}</td></tr>
+        <tr><td>Créances clients</td><td class="montant">${fcfa(s.creances_clients)}</td></tr>
+        <tr><td>Dettes fournisseurs</td><td class="montant">${fcfa(s.dettes_fournisseurs)}</td></tr>
+        <tr><td>Écritures du mois</td><td class="montant">${qte(s.nb_ecritures || 0)}</td></tr></tbody></table></div></div>`;
+}
+
+function controlesHtml(liste, { actions = false, a, m } = {}) {
+  const etapes = [...new Set(liste.map(c => c.etape))];
+  return etapes.map(e => `<div class="cl-etape"><h3>${esc(e)}</h3>
+    ${liste.filter(c => c.etape === e).map(c => { const st = etatControle(c), nav = NAV.find(n => n.id === c.page);
+      return `<div class="cl-ctrl ${st}"><span class="cl-ic" aria-hidden="true">${ICONE_CTRL[st]}</span>
+        <div class="cl-txt"><b>${esc(c.libelle)}</b>${c.ok ? "" : ` <span class="pastille ${st === "bloquant" ? "alerte" : "attente"}">${st === "bloquant" ? "Bloquant" : "À expliquer"}</span>`}
+          ${c.detail ? `<div class="discret petit">${esc(c.detail)}</div>` : ""}</div>
+        ${actions && !c.ok ? `<div class="actions-ligne">
+          ${c.action && ACTIONS_CLOTURE[c.action] && peut(["comptable", "daf", "admin"]) ? `<button class="btn btn-principal" data-action="${c.action}">${esc(ACTIONS_CLOTURE[c.action].l)}</button>` : ""}
+          ${nav && navPermise(nav) && c.page !== "periodes" ? `<button class="btn" data-ouvrir="${c.page}">Ouvrir ${esc(nav.l.toLowerCase())}</button>` : ""}</div>` : ""}</div>`; }).join("")}</div>`).join("");
+}
+
+function imprimerDossierCloture(cl) {
+  const ctrl = cl.controles || [];
+  imprimerHtml(`Clôture ${nomMois(cl.annee, cl.mois)}`, `<h1 style="text-align:center">DOSSIER DE CLÔTURE</h1>
+    <p style="text-align:center" class="discret">${esc(nomMois(cl.annee, cl.mois))} · clôturé le ${esc(quandHeure(cl.cloture_le))} par ${esc(nomProfil(cl.cloture_par))}</p>
+    ${cl.statut === "Rouvert" ? `<p style="color:#B42318"><b>MOIS ROUVERT</b> le ${esc(quandHeure(cl.rouvert_le))} par ${esc(nomProfil(cl.rouvert_par))} : ${esc(cl.motif_reouverture || "")}</p>` : ""}
+    <h2>Chiffres clés</h2>${syntheseHtml(cl.synthese)}
+    <h2>Contrôles au moment de la clôture</h2>
+    <table><thead><tr><th>Contrôle</th><th>Résultat</th><th>Détail</th></tr></thead><tbody>
+      ${ctrl.map(c => `<tr><td>${esc(c.libelle)}</td><td>${c.ok ? "Conforme" : c.niveau === "Bloquant" ? "Bloquant" : "Point d'attention"}</td><td>${esc(c.detail || "")}</td></tr>`).join("")}</tbody></table>
+    ${cl.commentaire ? `<p><b>Commentaire du DAF :</b> ${esc(cl.commentaire)}</p>` : ""}
+    <table style="margin-top:1.2rem"><tr><td style="width:50%;vertical-align:top"><b>Le DAF</b><br>${esc(nomProfil(cl.cloture_par))}</td>
+      <td style="width:50%;vertical-align:top"><b>Visa de la direction générale</b></td></tr></table>`);
+}
+
+async function pagePeriodes() {
+  await chargerListe("profils_noms");
+  const [{ data: per, error }, { data: dossiers }] = await Promise.all([
+    sb.from("periodes").select("*").order("annee").order("mois"),
+    sb.from("clotures_mois").select("*").order("cloture_le", { ascending: false })]);
+  if (error) throw error;
+  const periodes = per || [], daf = peut(VALIDATION), admin = peut(["admin"]);
+  const auj = new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Douala" });
+  // Prochain mois à clôturer : le plus ancien mois ouvert déjà terminé (sinon le mois en cours).
+  const ouverts = periodes.filter(p => p.statut === "Ouverte");
+  const prochain = ouverts.find(p => finDeMois(p.annee, p.mois) < auj) || ouverts.find(p => `${p.annee}-${String(p.mois).padStart(2, "0")}` <= auj.slice(0, 7)) || ouverts[0];
+  const choix = etat.param.mois || etat.moisCloture || (prochain ? `${prochain.annee}-${prochain.mois}` : null);
+  const annees = [...new Set(periodes.map(p => p.annee))];
+  let [annee, mois] = (choix || `${annees[0]}-1`).split("-").map(Number);
+  const dossierDe = (a, m) => (dossiers || []).find(d => d.annee === a && d.mois === m && d.statut === "Clôturé");
+
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Clôture du mois</h1>
+      <p class="discret">Avant de clôturer, l'application vérifie le mois point par point. Les points <b>bloquants</b> doivent être réglés ;
+      les <b>points d'attention</b> peuvent rester, mais vous les expliquez dans un commentaire. Un mois clos ne reçoit plus aucune écriture ; seul l'administrateur le rouvre, avec un motif.</p></div></div>
+    <div class="cl-page"><nav class="panneau cl-cal" aria-label="Mois">
+        <label for="cl-annee" class="petit">Exercice</label><select id="cl-annee">${annees.map(a => `<option ${a === annee ? "selected" : ""}>${a}</option>`).join("")}</select>
+        <ol id="cl-mois"></ol></nav>
+      <section id="cl-zone" class="cl-zone"></section></div>`;
+
+  const dessinerCalendrier = () => {
+    $("#cl-mois").innerHTML = periodes.filter(p => p.annee === annee).map(p => {
+      const clos = p.statut !== "Ouverte", courant = p.mois === mois, est = prochain && p.annee === prochain.annee && p.mois === prochain.mois;
+      return `<li><button class="cl-m ${clos ? "clos" : ""} ${courant ? "actif" : ""}" data-m="${p.mois}" ${courant ? `aria-current="true"` : ""}>
+        <span>${esc(MOIS[p.mois - 1])}</span><span class="pastille ${clos ? "ok" : est ? "attente" : "inactif"}">${clos ? "Clôturé" : est ? "À clôturer" : "Ouvert"}</span></button></li>`; }).join("");
+    $$("[data-m]").forEach(b => b.onclick = () => { mois = Number(b.dataset.m); etat.moisCloture = `${annee}-${mois}`; dessinerCalendrier(); afficher(); });
+  };
+  $("#cl-annee").onchange = e => { annee = Number(e.target.value); mois = 1; dessinerCalendrier(); afficher(); };
+
+  const afficher = async () => {
+    const zone = $("#cl-zone"), p = periodes.find(x => x.annee === annee && x.mois === mois);
+    if (!p) { zone.innerHTML = `<div class="panneau vide">Période inconnue.</div>`; return; }
+    if (p.statut !== "Ouverte") {
+      const d = dossierDe(annee, mois), anciens = (dossiers || []).filter(x => x.annee === annee && x.mois === mois && x.statut === "Rouvert");
+      zone.innerHTML = `<div class="panneau" style="padding:1.2rem">
+        <div class="cl-titre"><div><h2>${esc(nomMois(annee, mois))}</h2>
+          <p class="discret">Clôturé le ${esc(quandHeure(p.cloture_le))}${p.cloture_par ? " par " + esc(nomProfil(p.cloture_par)) : ""}.</p></div>
+          <div class="actions-ligne">${d ? `<button class="btn" id="cl-imp">Imprimer le dossier</button>` : ""}${admin ? `<button class="btn" id="cl-rouvrir">Rouvrir le mois</button>` : ""}</div></div>
+        ${d ? `${d.commentaire ? `<p class="cl-com"><b>Commentaire de clôture :</b> ${esc(d.commentaire)}</p>` : ""}
+          <h3 class="titre-section">Chiffres clés figés à la clôture</h3>${syntheseHtml(d.synthese)}
+          <h3 class="titre-section">Contrôles à la clôture</h3>${controlesHtml(d.controles || [])}`
+          : `<p class="discret">Mois clôturé avant l'assistant de clôture : pas de dossier.</p>`}
+        ${anciens.length ? `<h3 class="titre-section">Réouvertures</h3><ul class="petit">${anciens.map(x => `<li>Rouvert le ${esc(quandHeure(x.rouvert_le))} par ${esc(nomProfil(x.rouvert_par))} : ${esc(x.motif_reouverture || "")}</li>`).join("")}</ul>` : ""}</div>`;
+      if (d) $("#cl-imp").onclick = () => imprimerDossierCloture(d);
+      if (admin) $("#cl-rouvrir").onclick = () => ouvrirModale(`Rouvrir ${nomMois(annee, mois).toLowerCase()}`,
+        `<p>Le mois pourra de nouveau recevoir des écritures. Il faudra le clôturer à nouveau avec l'assistant. On rouvre du mois le plus récent vers le plus ancien.</p>
+         <label for="ro-motif">Motif *</label><textarea id="ro-motif" rows="3" placeholder="Ex. : facture fournisseur de ce mois reçue en retard"></textarea>`, {
+        libelleSave: "Rouvrir le mois",
+        onSave: async () => { const motif = $("#ro-motif").value.trim(); if (motif.length < 5) return "Indiquez le motif de la réouverture.";
+          try { await appeler("rouvrir_mois", { p_annee: annee, p_mois: mois, p_motif: motif }); } catch (err) { return messageErreur(err); }
+          toast("Mois rouvert."); etat.moisCloture = `${annee}-${mois}`; recharger(); } });
+      return;
+    }
+    zone.innerHTML = `<div class="panneau" style="padding:1.2rem"><p class="discret">Vérification de ${esc(nomMois(annee, mois).toLowerCase())}…</p></div>`;
+    let ctrl, synth;
+    try { [ctrl, synth] = await Promise.all([appeler("controles_cloture", { p_annee: annee, p_mois: mois }), appeler("synthese_mois", { p_annee: annee, p_mois: mois })]); }
+    catch (err) { zone.innerHTML = `<div class="erreur">${esc(messageErreur(err))}</div>`; return; }
+    ctrl = ctrl || [];
+    const bloq = ctrl.filter(c => !c.ok && c.niveau === "Bloquant"), att = ctrl.filter(c => !c.ok && c.niveau !== "Bloquant"), conf = ctrl.filter(c => c.ok).length;
+    const pct = Math.round(conf / Math.max(ctrl.length, 1) * 100);
+    zone.innerHTML = `<div class="panneau" style="padding:1.2rem">
+      <div class="cl-titre"><div><h2>${esc(nomMois(annee, mois))}</h2>
+        <p class="discret">${conf} contrôle(s) conforme(s) sur ${ctrl.length} · <b class="${bloq.length ? "negatif" : ""}">${bloq.length} bloquant(s)</b> · ${att.length} point(s) d'attention</p></div>
+        <button class="btn" id="cl-maj">Vérifier à nouveau</button></div>
+      <div class="cl-barre" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Avancement des contrôles"><span style="width:${pct}%" class="${bloq.length ? "" : "pret"}"></span></div>
+      ${controlesHtml(ctrl, { actions: true, a: annee, m: mois })}
+      <h3 class="titre-section">Chiffres clés du mois</h3>${syntheseHtml(synth)}
+      ${daf ? `<div class="cl-final">
+        <label for="cl-com">Commentaire de clôture ${att.length ? "*" : ""}</label>
+        <textarea id="cl-com" rows="3" placeholder="${att.length ? "Expliquez les points d'attention restants (ex. : relevé BGFI attendu, paie reprise du classeur)" : "Facultatif"}"></textarea>
+        <p><button class="btn btn-principal" id="cl-ok" ${bloq.length ? "disabled" : ""}>Clôturer ${esc(nomMois(annee, mois).toLowerCase())}</button>
+          ${bloq.length ? `<span class="discret petit">Réglez d'abord les ${bloq.length} point(s) bloquant(s).</span>` : ""}</p></div>`
+        : `<p class="discret petit" style="margin-top:1rem">Seul le DAF clôture le mois. Vous pouvez préparer la clôture en réglant les points ci-dessus.</p>`}</div>`;
+    $("#cl-maj").onclick = afficher;
+    $$("[data-ouvrir]", zone).forEach(b => b.onclick = () => aller(b.dataset.ouvrir));
+    $$("[data-action]", zone).forEach(b => b.onclick = async () => {
+      const ac = ACTIONS_CLOTURE[b.dataset.action]; b.disabled = true;
+      try { const msg = await appeler(b.dataset.action, ac.params(annee, mois)); toast(typeof msg === "string" ? msg : "Fait."); }
+      catch (err) { b.disabled = false; return toast(messageErreur(err), true); }
+      afficher();
+    });
+    if (daf && $("#cl-ok")) $("#cl-ok").onclick = async () => {
+      const com = $("#cl-com").value.trim();
+      if (att.length && com.length < 5) return toast("Expliquez les points d'attention dans le commentaire de clôture.", true);
+      if (!confirm(`Clôturer ${nomMois(annee, mois).toLowerCase()} ? Plus aucune écriture ne pourra y être passée.`)) return;
+      $("#cl-ok").disabled = true;
+      try { await appeler("cloturer_mois", { p_annee: annee, p_mois: mois, p_commentaire: com || null }); }
+      catch (err) { $("#cl-ok").disabled = false; return toast(messageErreur(err), true); }
+      toast(`${nomMois(annee, mois)} clôturé.`); etat.moisCloture = `${annee}-${mois}`; recharger();
+    };
+  };
+  dessinerCalendrier();
+  await afficher();
 }
 
 const PAGES_FINANCES = {
