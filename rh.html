@@ -7,7 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://qqfwwnllllhybxuaqiiq.supabase.co; connect-src 'self' https://qqfwwnllllhybxuaqiiq.supabase.co wss://qqfwwnllllhybxuaqiiq.supabase.co https://cdn.jsdelivr.net https://cdn.sheetjs.com; frame-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
 <script>window.GM_APP = "rh";</script>
 <script src="logo.js"></script>
 <style>
@@ -5179,7 +5181,7 @@ async function registreOV(conteneur, annee, mois) {
       <td class="code">${esc(dateCourte(o.date_ordre))}</td><td class="montant">${o.nb_beneficiaires}</td><td class="montant">${fcfa(o.montant)}</td>
       <td><div class="actions-ligne"><button class="btn" data-ov-voir="${o.id}">Aperçu</button>
         ${!o.annule && peut(GESTION) ? `<button class="btn-lien" data-ov-annuler="${o.id}">Annuler</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>`;
-  $$("[data-ov-voir]", conteneur).forEach(b => b.onclick = () => { const o = data.find(x => x.id === b.dataset.ovVoir); imprimerHtml(o.numero, o.document_html); });
+  $$("[data-ov-voir]", conteneur).forEach(b => b.onclick = () => { const o = data.find(x => x.id === b.dataset.ovVoir); imprimerHtml(o.numero, assainirHtml(o.document_html)); });
   $$("[data-ov-annuler]", conteneur).forEach(b => b.onclick = async () => {
     const motif = prompt("Motif de l'annulation de cet OV :"); if (!motif) return;
     const { error: e } = await sb.from("ordres_virement").update({ annule: true, motif_annulation: motif }).eq("id", b.dataset.ovAnnuler);
@@ -6998,7 +7000,7 @@ async function editeurCourrier(s, o, retour) {
     <div class="barre-actions"><button type="button" class="btn" id="co-imprimer">Imprimer sur le papier à en-tête</button>
       ${o.lecture || !peut(PERSO_ECRITURE) ? "" : `<button type="button" class="btn btn-principal" id="co-ranger">Ranger au dossier</button>`}</div>`, { large: true });
   const remplir = async () => {
-    if (o.lecture) { $("#co-texte").innerHTML = o.html; return; }
+    if (o.lecture) { $("#co-texte").innerHTML = assainirHtml(o.html); return; }
     const m = $("#co-modele").value, x = await extra(m);
     $("#co-avert").innerHTML = x.provisoire ? `<div class="info">Le bulletin du mois de sortie n'est pas encore calculé : montants provisoires (indemnités seules, sans salaire du mois ni retenues).
       Calculez la paie, puis rouvrez ce modèle.</div>` : "";
@@ -7258,7 +7260,7 @@ async function imprimerPieceCaisse(id) {
   let p; try { p = await appeler("lire_piece_caisse", { p_piece: id }); } catch (err) { return toast(messageErreur(err), true); }
   if (!p) return toast("Pièce de caisse introuvable.", true);
   const bloc = (titre, img, nom, quand, mention) => `<td style="width:50%;vertical-align:top"><b>${esc(titre)}</b><br>
-    ${img ? `<img src="${img}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">` : `<div style="height:70px;color:#B42318">Pas encore signée</div>`}
+    ${img ? `<img src="${esc(img)}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">` : `<div style="height:70px;color:#B42318">Pas encore signée</div>`}
     <span>${esc(nom || "")}</span><br><span class="discret">${quand ? "Signé électroniquement le " + esc(quandHeure(quand)) : ""}${mention ? "<br>" + esc(mention) : ""}</span></td>`;
   imprimerHtml(`Pièce de caisse ${p.numero}`, `<h1>Pièce de caisse — sortie n° ${esc(p.numero)}</h1>
     <p class="discret">${esc(p.caisse)} · ${esc(dateLongue(p.date_piece))}${p.statut === "Annulée" ? " · ANNULÉE" : p.statut === "À signer" ? " · en attente de la signature du bénéficiaire" : ""}</p>
@@ -7716,7 +7718,7 @@ function imprimerArrete(a, caisse) {
     ${a.observation ? `<p><b>Observation du caissier :</b> ${esc(a.observation)}</p>` : ""}
     ${a.decision ? `<p><b>Décision du DAF</b> (${esc(quandHeure(a.decision_le))}) : ${esc(a.decision)}${a.decision_commentaire ? " — " + esc(a.decision_commentaire) : ""}</p>` : ""}
     ${a.statut === "Annulé" ? `<p style="color:#B42318"><b>ARRÊTÉ ANNULÉ</b> : ${esc(a.motif_annulation || "")}</p>` : ""}
-    <table style="margin-top:1rem"><tr><td style="width:50%;vertical-align:top"><b>Le caissier</b><br><img src="${a.signature_caissier}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">
+    <table style="margin-top:1rem"><tr><td style="width:50%;vertical-align:top"><b>Le caissier</b><br><img src="${esc(a.signature_caissier)}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">
       ${esc(nomProfil(a.caissier_id))}<br><span class="discret">Signé électroniquement le ${esc(quandHeure(a.signe_le))}</span></td>
       <td style="width:50%;vertical-align:top"><b>Visa du DAF</b></td></tr></table>`);
 }
@@ -7988,7 +7990,7 @@ function blocSignaturesHtml(sigs, attendus) {
   return `<table class="sg-bloc" style="width:100%;margin-top:.6rem"><tr>${cases.map(s => `<td style="width:${Math.round(100 / cases.length)}%;vertical-align:top">
       <b>${esc(TITRE_QUALITE[s.qualite] || s.qualite)}</b><br>
       ${s.vide ? `<div class="sg-vide">En attente de signature</div>`
-        : `<img src="${s.signature}" alt="Signature de ${esc(s.nom_signataire)}" style="height:64px;max-width:100%;display:block;margin:.3rem 0">
+        : `<img src="${esc(s.signature)}" alt="Signature de ${esc(s.nom_signataire)}" style="height:64px;max-width:100%;display:block;margin:.3rem 0">
           <span>${esc(s.nom_signataire)}</span><br>
           <span class="discret petit">${s.mention !== TITRE_QUALITE[s.qualite] ? esc(s.mention) : ""}${s.refus ? ` — témoin : ${esc(s.nom_signataire)}${s.motif_refus ? ` (« ${esc(s.motif_refus)} »)` : ""}` : ""}<br>
           Signé électroniquement le ${esc(quandHeure(s.signe_le))}${s.mode === "Au guichet" ? ` · au guichet (${esc(s.signe_par_nom || "")})` : ""}</span>
@@ -7999,6 +8001,7 @@ function blocSignaturesHtml(sigs, attendus) {
 /* Fenêtre de lecture et de signature d'un document.
    o = { objet, id, titre, docHtml, nom (salarié), attendu ('Employeur' | 'Lu et approuvé' | 'Reçu' | 'Pris connaissance'), estMoi, apres } */
 async function fenetreSignature(o) {
+  if (o.objet === "Courrier") o = { ...o, docHtml: assainirHtml(o.docHtml) };
   const sigs = await lireSignatures(o.objet, o.id);
   const a = q => sigs.find(s => s.qualite === q);
   const rh = peut(PERSO_ECRITURE);
@@ -9417,12 +9420,34 @@ function documentImprimable(titre, corpsHtml, opts = {}) {
 /* Tout document passe d'abord par un aperçu (pour ne pas gâcher de papier) ;
    « Imprimer » lance ensuite l'impression du cadre. Une fenêtre à part (et non
    la modale) : on peut prévisualiser depuis un formulaire ouvert sans le perdre. */
+/* HTML rangé en base (courriers, ordres de virement) : on ne garde que la mise en forme.
+   Plus de script, cadre, formulaire, gestionnaire d'événement ni lien « javascript: ». */
+const BALISES_SURES = new Set(["P", "BR", "B", "STRONG", "I", "EM", "U", "S", "SPAN", "DIV", "H1", "H2", "H3", "H4", "UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "TFOOT",
+  "TR", "TH", "TD", "COL", "COLGROUP", "CAPTION", "HR", "SMALL", "SUP", "SUB", "BLOCKQUOTE", "IMG", "A", "FONT", "CENTER", "SECTION", "HEADER", "FOOTER"]);
+const ATTRIBUTS_SURS = new Set(["style", "class", "colspan", "rowspan", "align", "valign", "width", "height", "src", "alt", "href", "title", "color", "size", "face"]);
+function assainirHtml(html) {
+  const doc = new DOMParser().parseFromString(`<div>${String(html || "")}</div>`, "text/html");
+  const nettoyer = el => {
+    [...el.children].forEach(c => {
+      if (!BALISES_SURES.has(c.tagName)) { if (["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "TEMPLATE", "SVG", "MATH"].includes(c.tagName)) c.remove(); else c.replaceWith(...c.childNodes); return; }
+      [...c.attributes].forEach(a => {
+        const n = a.name.toLowerCase(), v = a.value.trim().toLowerCase();
+        if (!ATTRIBUTS_SURS.has(n) || (n === "src" && !/^data:image\/(png|jpeg|webp);base64,/.test(v) && !v.startsWith("https://"))
+            || (n === "href" && !/^(https?:|mailto:|tel:|#)/.test(v)) || (n === "style" && /expression|url\s*\(|javascript/.test(v))) c.removeAttribute(a.name);
+      });
+      nettoyer(c);
+    });
+  };
+  const racine = doc.body.firstChild; nettoyer(racine);
+  return racine.innerHTML;
+}
+
 function imprimerHtml(titre, corpsHtml, opts = {}) {
   let d = $("#apercu");
   if (!d) { d = document.createElement("dialog"); d.id = "apercu"; d.className = "apercu"; document.body.appendChild(d); }
   d.innerHTML = `<div class="apercu-tete"><div class="apercu-titre"><b>${esc(titre)}</b><span class="discret petit">Aperçu avant impression — vérifiez avant d'imprimer</span></div>
       <button type="button" class="btn btn-principal" id="ap-imprimer">Imprimer</button><button type="button" class="btn" id="ap-fermer">Fermer</button></div>
-    <iframe id="ap-cadre" title="Aperçu : ${esc(titre)}"></iframe>`;
+    <iframe id="ap-cadre" sandbox="allow-same-origin allow-modals" title="Aperçu : ${esc(titre)}"></iframe>`;
   const cadre = $("#ap-cadre", d);
   cadre.srcdoc = documentImprimable(titre, corpsHtml, opts);
   $("#ap-fermer", d).onclick = () => d.close();
@@ -9465,17 +9490,24 @@ const libellePayeur = p => p === "Guest Cameroun" ? "payé par Guest Cameroun" :
    Les bibliothèques sont chargées au premier export seulement.
    ===================================================================== */
 const CDN_EXPORT = {
-  xlsx: "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+  xlsx: "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
   jspdf: "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
   autotable: "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"
 };
 const scriptsCharges = {};
+// Empreintes SHA-384 : un fichier modifié sur le CDN est refusé par le navigateur.
+const INTEGRITE_SCRIPTS = {
+  "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js": "sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT",
+  "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js": "sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk",
+  "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js": "sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3"
+};
 
 function chargerScript(url) {
   if (scriptsCharges[url]) return scriptsCharges[url];
   scriptsCharges[url] = new Promise((ok, ko) => {
     const s = document.createElement("script");
     s.src = url;
+    if (INTEGRITE_SCRIPTS[url]) { s.integrity = INTEGRITE_SCRIPTS[url]; s.crossOrigin = "anonymous"; }
     s.onload = () => ok();
     s.onerror = () => { delete scriptsCharges[url]; ko(new Error("Outil d'export inaccessible.")); };
     document.head.appendChild(s);
