@@ -324,6 +324,12 @@ svg.courbe .zero{stroke:var(--encre-douce);stroke-width:.8;stroke-dasharray:2 2}
 .cl-kpi{background:#F4F7FB;border-radius:10px;padding:.7rem .9rem;display:flex;flex-direction:column}.cl-kpi b{font-size:1.25rem;font-variant-numeric:tabular-nums}.cl-kpi small{color:var(--encre-douce)}
 .cl-final{margin-top:1.4rem;border-top:1px solid var(--trait);padding-top:1rem}.cl-com{background:#F4F7FB;border-radius:10px;padding:.7rem .9rem}
 @media (max-width:860px){.cl-page{grid-template-columns:1fr}.cl-synth{grid-template-columns:1fr}.cl-cal ol{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.cl-ctrl{flex-wrap:wrap}.cl-ctrl .actions-ligne{width:100%;justify-content:flex-start}}
+.sg-vide{height:64px;display:flex;align-items:center;color:var(--encre-douce);font-style:italic}
+.sg-doc{max-height:45vh;overflow:auto;border:1px solid var(--trait);border-radius:8px;padding:1rem;background:#fff}
+.sg-saisie{margin-top:1rem;border-top:1px solid var(--trait);padding-top:.8rem}
+.sg-attente{margin-bottom:1.25rem;border-left:4px solid var(--ambre)}
+.sg-kpi{font:inherit;text-align:left;cursor:pointer}.sg-kpi[aria-pressed="true"]{border-color:var(--registre);background:var(--registre-clair)}
+.sg-bloc td{border:none;padding:.3rem .6rem .3rem 0}
 .fb-total{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;background:#F4F7FB;border-radius:10px;padding:.7rem 1rem;margin-top:.7rem}
 .fb-total b{font-size:1.4rem;white-space:nowrap}
 .fb-total small{color:#5A6675;display:block}
@@ -367,7 +373,7 @@ const adresseRetour = () => CONFIG.URL_APPLICATION || location.origin + location
 const APP = window.GM_APP === "rh" ? "rh" : "daf";
 const NOM_APP = APP === "rh" ? "Guest Markets RH" : "Guest Markets Management";
 const PAGES_RH = new Set(["accueil", "mon_pointage", "presences", "mon_dossier", "mes_conges", "mes_bulletins", "mes_demandes", "mes_besoins", "mes_evaluations", "mon_equipe",
-  "personnel", "paie", "conges", "demandes_personnel", "evaluations", "utilisateurs", "postes", "profil", "departements"]);
+  "personnel", "paie", "conges", "demandes_personnel", "signatures", "evaluations", "utilisateurs", "postes", "profil", "departements"]);
 const GROUPES_RH = new Set(["Mon espace", "Ressources humaines", "Référentiels", "Administration", "Compte"]);
 const adresseApp = app => new URL((app === "rh" ? "rh.html" : "./") + location.search, location.href).href;
 
@@ -757,6 +763,7 @@ const NAV = [
   { id: "conges", l: "Congés", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { id: "presences", l: "Présences", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { id: "demandes_personnel", l: "Demandes du personnel", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
+  { id: "signatures", l: "Signatures", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { id: "evaluations", l: "Évaluations", roles: ["rh", "daf", "admin", "auditeur", "dg"] },
   { groupe: "Comptabilité", roles: FINANCE },
   { id: "journaux", l: "Journaux", roles: FINANCE },
@@ -1117,7 +1124,7 @@ const ICONE_PAGE = {
   categories_operation: "etiquette", plan_comptable: "liste", activites: "mallette", sites: "repere", vehicules: "voiture", comptes_tresorerie: "banque",
   parametres: "reglages", utilisateurs: "bouclier", postes: "mallette", journal: "historique", profil: "personne",
   mon_dossier: "personne", mes_conges: "calendrier", mes_bulletins: "billet", mes_demandes: "document", mes_evaluations: "cible", mon_equipe: "groupe",
-  demandes_personnel: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe", mon_pointage: "repere", presences: "historique", arretes_caisse: "pieces"
+  demandes_personnel: "document", signatures: "document", evaluations: "cible", mes_besoins: "panier", fiches_besoin: "panier", departements: "groupe", mon_pointage: "repere", presences: "historique", arretes_caisse: "pieces"
 };
 const initiales = p => ((p.prenom || "").trim()[0] || "") + ((p.nom || "").trim()[0] || "") || (p.email || "?")[0];
 
@@ -2150,6 +2157,13 @@ async function aFaireFinances() {
       if (p && finDeMois(p.annee, p.mois) < auj.slice(0, 8) + "01") pts.push({ texte: `<b>Clôture de ${esc(nomMois(p.annee, p.mois).toLowerCase())}</b> à faire : l'assistant vérifie le mois point par point.`, page: "periodes", param: { mois: `${p.annee}-${p.mois}` }, bouton: "Clôturer" });
     }
   } catch (e) { /* lot 14 absent */ }
+  try {
+    if (peut(PERSO_ECRITURE)) {
+      const sg = await appeler("suivi_signatures_rh") || [];
+      const emp = sg.filter(x => x.etape === "À signer par l'employeur").length;
+      if (emp) pts.push({ texte: `<b>${emp} courrier(s) du personnel</b> attendent votre signature pour l'employeur.`, page: "signatures", param: { etape: "À signer par l'employeur" }, bouton: "Signer" });
+    }
+  } catch (e) { /* lot 15 absent */ }
   if (peut(BESOINS_LECTEURS)) {
     const { data: fb } = await sb.from("v_fiches_besoin").select("statut, en_retard").in("statut", ["Visée", "Contrôlée", "Validée", "Payée", "Justifiée", "Monnaie à rendre"]);
     const nb = st => (fb || []).filter(f => f.statut === st).length;
@@ -6441,7 +6455,14 @@ async function ficheSalarie(id) {
       ${ecrire && e.type === "Suspension" && e.statut === "Ouvert" ? `<button class="btn" data-reprise="1">Reprise</button>` : ""}
       ${peut(["daf", "admin"]) && !["Embauche", "Sortie"].includes(e.type) ? `<button class="btn-lien" data-suppr-ev="${e.id}">Supprimer</button>` : ""}</div></li>`;
   const brancherEv = () => {
-    $$("[data-voir]").forEach(b => b.onclick = () => { const e = evs.find(x => x.id === b.dataset.voir); editeurCourrier(s, { html: e.document_html, titre: e.objet || e.type, evenement: e, lecture: true }, recharge); });
+    $$("[data-voir]").forEach(b => b.onclick = () => { const e = evs.find(x => x.id === b.dataset.voir);
+      fenetreSignature({ objet: "Courrier", id: e.id, titre: e.objet || e.type, docHtml: e.document_html, nom: nomPersonne(s), attendu: exigenceCourrier(e.type, e.objet), estMoi: false, apres: recharge }); });
+    sb.from("signatures_rh").select("objet_id, qualite, refus").eq("objet", "Courrier").eq("salarie_id", s.id).then(({ data }) => {
+      $$("[data-voir]").forEach(b => { const e = evs.find(x => x.id === b.dataset.voir); if (!e || b.dataset.etat) return;
+        const sg = (data || []).filter(x => x.objet_id === e.id), emp = sg.some(x => x.qualite === "Employeur"), sal = sg.find(x => ["Salarié", "Témoin"].includes(x.qualite));
+        const t = !emp ? ["À signer", "alerte"] : exigenceCourrier(e.type, e.objet) === "Employeur" || sal ? [sal && sal.refus ? "Refus constaté" : "Signé", sal && sal.refus ? "inactif" : "ok"] : ["Attente salarié", "attente"];
+        b.dataset.etat = "1"; b.insertAdjacentHTML("beforebegin", `<span class="pastille ${t[1]}">${t[0]}</span>`); });
+    });
     $$("[data-rediger]").forEach(b => b.onclick = () => { const e = evs.find(x => x.id === b.dataset.rediger); editeurCourrier(s, { modele: modeleEv(e, s), evenement: e }, recharge); });
     $$("[data-repondre]").forEach(b => b.onclick = () => formulaireReponse(evs.find(x => x.id === b.dataset.repondre), recharge));
     $$("[data-reprise]").forEach(b => b.onclick = () => formulaireEvenement(s, "Reprise", recharge));
@@ -6994,7 +7015,7 @@ async function editeurCourrier(s, o, retour) {
         await appeler("enregistrer_evenement_rh", { p_salarie: s.id, p: { type: "Courrier", objet: MODELES_COURRIER[m], document_html: html } });
       }
     } catch (err) { return toast(messageErreur(err), true); }
-    $("#modale").close(); toast("Courrier rangé au dossier. Faites-le signer, puis ajoutez l'exemplaire signé aux pièces."); retour();
+    $("#modale").close(); toast("Courrier rangé au dossier : ouvrez-le pour le signer au nom de l'employeur, puis faites-le signer au salarié."); retour();
   };
 }
 
@@ -7942,7 +7963,181 @@ async function pagePeriodes() {
   await afficher();
 }
 
+/* =====================================================================
+   Lot 15 — Signature électronique des documents RH
+   Courriers : l'employeur signe, puis le salarié (« Lu et approuvé » ou
+   « Reçu ») sur son compte ou au guichet ; attestations : employeur seul.
+   Bulletins : accusé de réception. Évaluations : responsable puis salarié.
+   Refus : constaté par la RH avec un témoin. Empreinte SHA-256 contrôlée.
+   ===================================================================== */
+const exigenceCourrier = (type, objet) => /^(attestation|certificat de travail)/i.test(objet || "") ? "Employeur"
+  : ["Embauche", "Avenant", "Renouvellement d'essai", "Revalorisation", "Promotion", "Mutation"].includes(type)
+    || /^(contrat|notification de revalorisation|renouvellement|solde de tout compte|avenant)/i.test(objet || "") ? "Lu et approuvé" : "Reçu";
+const TITRE_QUALITE = { Employeur: "Pour l'employeur", Responsable: "Le responsable", "Salarié": "Le salarié", "Témoin": "Refus de signer" };
+const CLASSE_ETAPE_SIG = { "Signé": "ok", "En attente du salarié": "attente", "À signer par l'employeur": "alerte", "À signer par le responsable": "alerte", "Refus constaté": "inactif" };
+
+async function lireSignatures(objet, id) {
+  try { return await appeler("signatures_document", { p_objet: objet, p_id: id }) || []; } catch (e) { return []; }
+}
+
+// Bloc des signatures (écran et impression). attendus : qualités à montrer, même vides.
+function blocSignaturesHtml(sigs, attendus) {
+  const cases = attendus.map(q => (q === "Salarié" && sigs.find(s => s.qualite === "Témoin")) ? sigs.find(s => s.qualite === "Témoin") : sigs.find(s => s.qualite === q) || { qualite: q, vide: true });
+  const modifie = sigs.some(s => s.conforme === false);
+  return `<table class="sg-bloc" style="width:100%;margin-top:.6rem"><tr>${cases.map(s => `<td style="width:${Math.round(100 / cases.length)}%;vertical-align:top">
+      <b>${esc(TITRE_QUALITE[s.qualite] || s.qualite)}</b><br>
+      ${s.vide ? `<div class="sg-vide">En attente de signature</div>`
+        : `<img src="${s.signature}" alt="Signature de ${esc(s.nom_signataire)}" style="height:64px;max-width:100%;display:block;margin:.3rem 0">
+          <span>${esc(s.nom_signataire)}</span><br>
+          <span class="discret petit">${s.mention !== TITRE_QUALITE[s.qualite] ? esc(s.mention) : ""}${s.refus ? ` — témoin : ${esc(s.nom_signataire)}${s.motif_refus ? ` (« ${esc(s.motif_refus)} »)` : ""}` : ""}<br>
+          Signé électroniquement le ${esc(quandHeure(s.signe_le))}${s.mode === "Au guichet" ? ` · au guichet (${esc(s.signe_par_nom || "")})` : ""}</span>
+          ${s.conforme === false ? `<div style="color:#B42318;font-weight:600">Document modifié après cette signature</div>` : ""}`}</td>`).join("")}</tr></table>
+    ${sigs.length ? `<p class="discret petit" style="margin-top:.4rem">Signatures électroniques — Guest Markets Management. Empreinte du document : ${esc(String(sigs[0].empreinte || "").slice(0, 16))}…${modifie ? " <b style='color:#B42318'>(ne correspond plus)</b>" : ""}</p>` : ""}`;
+}
+
+/* Fenêtre de lecture et de signature d'un document.
+   o = { objet, id, titre, docHtml, nom (salarié), attendu ('Employeur' | 'Lu et approuvé' | 'Reçu' | 'Pris connaissance'), estMoi, apres } */
+async function fenetreSignature(o) {
+  const sigs = await lireSignatures(o.objet, o.id);
+  const a = q => sigs.find(s => s.qualite === q);
+  const rh = peut(PERSO_ECRITURE);
+  const employeurSigne = o.objet !== "Courrier" || !!a("Employeur");
+  const responsableSigne = o.objet !== "Évaluation" || !!a("Responsable");
+  const salarieFait = !!(a("Salarié") || a("Témoin"));
+  const besoinSal = o.attendu !== "Employeur";
+  const attendus = o.objet === "Courrier" ? (besoinSal ? ["Employeur", "Salarié"] : ["Employeur"]) : o.objet === "Évaluation" ? ["Responsable", "Salarié"] : ["Salarié"];
+  const actions = [];
+  if (o.objet === "Courrier" && !employeurSigne && rh) actions.push(["employeur", "Signer pour l'employeur"]);
+  if (employeurSigne && responsableSigne && besoinSal && !salarieFait) {
+    if (o.estMoi) actions.push(["moi", o.attendu === "Lu et approuvé" ? "Signer « Lu et approuvé »" : "Signer pour réception"]);
+    if (rh && !o.estMoi) { actions.push(["guichet", "Faire signer au guichet"]); actions.push(["refus", "Constater un refus"]); }
+  }
+  const etape = !employeurSigne ? "En attente de la signature de l'employeur." : !responsableSigne ? "En attente de la signature du responsable."
+    : !besoinSal ? "Document signé par l'employeur." : salarieFait ? (a("Témoin") ? "Refus de signer constaté." : "Document signé.") : `En attente de la signature de ${o.nom || "salarié"}.`;
+  ouvrirModale(o.titre, `<p class="discret">${esc(etape)}</p>
+    <div class="courrier-edit sg-doc">${o.docHtml}</div>
+    <h3 style="margin-top:1rem">Signatures</h3>${blocSignaturesHtml(sigs, attendus)}
+    <div id="sg-zone"></div>
+    <div class="barre-actions"><button type="button" class="btn" id="sg-imp">Imprimer</button>
+      ${actions.map(([k, l]) => `<button type="button" class="btn ${k === "refus" ? "" : "btn-principal"}" data-sg="${k}">${esc(l)}</button>`).join("")}</div>`, { large: true });
+  $("#sg-imp").onclick = () => imprimerHtml(o.titre, `${o.docHtml}<div style="margin-top:1.2rem;page-break-inside:avoid">${blocSignaturesHtml(sigs, attendus)}</div>`);
+  $$("[data-sg]").forEach(b => b.onclick = () => {
+    const k = b.dataset.sg, zone = $("#sg-zone");
+    $$("[data-sg]").forEach(x => x.disabled = true);
+    const mention = o.attendu === "Lu et approuvé" ? "« Lu et approuvé »" : o.attendu === "Pris connaissance" ? "« Pris connaissance »" : "« Reçu le " + dateCourte(aujourdhui()) + " »";
+    zone.innerHTML = `<div class="sg-saisie">${
+      k === "employeur" ? `${champSignature("sg-pad", "Votre signature, pour l'employeur *")}
+        <p class="discret petit">Après votre signature, le texte du courrier ne peut plus être modifié.${besoinSal ? " Le salarié pourra ensuite le signer." : ""}</p>`
+      : k === "moi" ? `${champSignature("sg-pad", "Votre signature *")}
+        <p class="discret petit">En signant, vous apposez la mention ${esc(mention)}. ${o.attendu === "Reçu" ? "Signer pour réception ne veut pas dire que vous êtes d'accord : vous pouvez répondre par écrit." : ""}</p>`
+      : k === "guichet" ? `<div class="info">Remettez l'appareil à <b>${esc(o.nom || "le salarié")}</b> : c'est lui ou elle qui signe dans le cadre ci-dessous.</div>
+        ${champSignature("sg-pad", `Signature de ${o.nom || "salarié"} *`)}<p class="discret petit">Mention apposée : ${esc(mention)}. La signature est enregistrée « au guichet », à votre nom.</p>`
+      : `<div class="info">Le salarié refuse de signer. Un témoin (collègue présent) atteste que le document lui a été présenté. Le document est alors réputé remis.</div>
+        <label for="sg-temoin">Nom et prénom du témoin *</label><input id="sg-temoin" placeholder="Ex. : Paul NDJOCK, magasinier">
+        <label for="sg-motif">Motif invoqué par le salarié</label><input id="sg-motif" placeholder="Facultatif">
+        ${champSignature("sg-pad", "Signature du témoin *")}`}
+      <p style="margin-top:.6rem"><button type="button" class="btn btn-principal" id="sg-ok">${k === "refus" ? "Enregistrer le refus" : "Valider la signature"}</button>
+        <button type="button" class="btn-lien" id="sg-annuler">Annuler</button></p></div>`;
+    brancherSignature("sg-pad");
+    zone.scrollIntoView({ block: "nearest" });
+    $("#sg-annuler").onclick = () => { zone.innerHTML = ""; $$("[data-sg]").forEach(x => x.disabled = false); };
+    $("#sg-ok").onclick = async () => {
+      const sig = signatureDe("sg-pad"); if (!sig) return toast(k === "refus" ? "Le témoin doit signer." : "Signez dans le cadre.", true);
+      $("#sg-ok").disabled = true;
+      try {
+        if (k === "refus") {
+          const t = $("#sg-temoin").value.trim(); if (t.length < 3) { $("#sg-ok").disabled = false; return toast("Indiquez le nom du témoin.", true); }
+          await appeler("constater_refus_signature", { p_objet: o.objet, p_id: o.id, p_temoin: t, p_signature_temoin: sig, p_motif: $("#sg-motif").value.trim() || null });
+        } else await appeler("signer_document_rh", { p_objet: o.objet, p_id: o.id, p_signature: sig, p_guichet: k === "guichet" });
+      } catch (err) { $("#sg-ok").disabled = false; return toast(messageErreur(err), true); }
+      toast(k === "refus" ? "Refus de signer constaté." : "Signature enregistrée.");
+      $("#modale").close(); if (o.apres) o.apres();
+    };
+  });
+}
+
+// Ouvre un document de la liste de suivi ou de « À signer », quel que soit son type.
+async function ouvrirDocumentASigner(objet, id, { estMoi = false, apres } = {}) {
+  try {
+    if (objet === "Courrier") {
+      let e;
+      if (estMoi) e = (await appeler("mes_evenements") || []).find(x => x.id === id);
+      else { const r = await sb.from("evenements_rh").select("*").eq("id", id).maybeSingle(); if (r.error) throw r.error; e = r.data; }
+      if (!e) return toast("Courrier introuvable.", true);
+      const nom = estMoi ? nomPersonne(etat.monEspace.salarie) : await nomSalarieRH(e.salarie_id);
+      return fenetreSignature({ objet, id, titre: e.objet || e.type, docHtml: e.document_html, nom, attendu: exigenceCourrier(e.type, e.objet), estMoi, apres });
+    }
+    if (objet === "Bulletin") {
+      let b, ls;
+      if (estMoi) { b = (await appeler("mes_bulletins") || []).find(x => x.id === id); ls = b ? await appeler("mes_lignes_bulletin", { p_bulletin: id }) || [] : []; }
+      else {
+        const r = await sb.from("v_bulletins").select("*").eq("id", id).maybeSingle(); if (r.error) throw r.error; b = r.data;
+        ls = (await sb.from("lignes_bulletin").select("*").eq("bulletin_id", id).order("ordre")).data || [];
+      }
+      if (!b) return toast("Bulletin introuvable.", true);
+      return fenetreSignature({ objet, id, titre: `Bulletin de ${MOIS[b.mois - 1].toLowerCase()} ${b.annee} — ${nomPersonne(b)}`,
+        docHtml: `<style>${STYLE_BULLETIN}</style><div class="defil">${bulletinHtml(b, ls)}</div>`, nom: nomPersonne(b), attendu: "Reçu", estMoi, apres });
+    }
+    if (objet === "Évaluation") {
+      if (estMoi) { const it = (await appeler("mes_evaluations") || []).find(x => x.evaluation.id === id); return it ? formulaireEvaluation(it, apres) : aller("mes_evaluations"); }
+      const r = await sb.from("evaluations").select("*").eq("id", id).maybeSingle(); if (r.error) throw r.error;
+      const e = r.data, nom = await nomSalarieRH(e.salarie_id);
+      return fenetreSignature({ objet, id, titre: `Évaluation annuelle ${e.annee} — ${nom}`, nom, attendu: "Pris connaissance", estMoi: false, apres,
+        docHtml: `<p><b>Appréciation générale :</b> ${esc(e.appreciation || "—")}${e.note_globale != null ? ` · note ${qte(e.note_globale)} / 5` : ""}</p>
+          <p>${esc(e.commentaire_resp || "")}</p><p class="discret petit">Le détail se lit dans Personnel › Évaluations.</p>` });
+    }
+  } catch (err) { toast(messageErreur(err), true); }
+}
+async function nomSalarieRH(id) {
+  const { data } = await sb.from("salaries").select("nom, prenom").eq("id", id).maybeSingle();
+  return data ? nomPersonne(data) : "";
+}
+
+// « À signer » dans Mon dossier.
+function blocMesSignatures(liste) {
+  if (!liste || !liste.length) return "";
+  return `<div class="panneau sg-attente"><h2 style="margin:0 0 .5rem">Documents à signer</h2><ul class="points">
+    ${liste.map(d => `<li><p><b>${esc(d.titre)}</b>${d.date_document ? ` <span class="discret petit">· ${esc(dateCourte(d.date_document))}</span>` : ""}<br>
+      <span class="petit discret">${d.attendu === "Lu et approuvé" ? "À signer « Lu et approuvé »" : d.attendu === "Le responsable" ? "À signer en tant que responsable" : d.attendu === "Pris connaissance" ? "À lire et signer" : "À signer pour réception"}</span></p>
+      <button class="btn btn-principal" data-asigner="${d.objet}|${d.objet_id}">Lire et signer</button></li>`).join("")}</ul></div>`;
+}
+
+/* Suivi des signatures (RH, DAF, direction). */
+async function pageSignaturesRH() {
+  const lignes = await appeler("suivi_signatures_rh") || [];
+  const ETAPES = ["À signer par l'employeur", "À signer par le responsable", "En attente du salarié", "Refus constaté", "Signé"];
+  const compte = e => lignes.filter(l => l.etape === e).length;
+  let filtre = etat.param.etape || (compte("À signer par l'employeur") ? "À signer par l'employeur" : compte("En attente du salarié") ? "En attente du salarié" : "");
+  let type = "", cherche = "";
+  $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Signatures</h1>
+      <p class="discret">Courriers du dossier, bulletins et évaluations : qui doit encore signer. Un courrier signé par l'employeur ne se modifie plus.
+      Le salarié signe sur son compte (Mon dossier) ou au guichet, sur votre poste. Un refus se constate avec un témoin.</p></div></div>
+    <div class="kpis">${ETAPES.map(e => `<button class="kpi sg-kpi" data-etape="${esc(e)}" aria-pressed="${e === filtre}"><span class="kpi-txt"><b>${compte(e)}</b><span>${esc(e)}</span></span></button>`).join("")}</div>
+    <div class="panneau"><div class="outils"><input type="search" id="sg-cherche" placeholder="Salarié ou document" aria-label="Rechercher">
+      <select id="sg-type" aria-label="Type de document"><option value="">Tous les documents</option><option>Courrier</option><option>Bulletin</option><option>Évaluation</option></select>
+      <button class="btn-lien" id="sg-tous">Tout afficher</button></div><div class="defil" id="sg-table"></div></div>`;
+  const dessiner = () => {
+    const l = lignes.filter(x => (!filtre || x.etape === filtre) && (!type || x.objet === type)
+      && (!cherche || `${x.salarie} ${x.titre}`.toLowerCase().includes(cherche)))
+      .sort((p, q) => String(q.date_document || "").localeCompare(String(p.date_document || "")));
+    $("#sg-table").innerHTML = `<table><thead><tr><th>Date</th><th>Salarié</th><th>Document</th><th>Étape</th><th></th></tr></thead><tbody>
+      ${l.map(x => `<tr><td class="code">${esc(dateCourte(x.date_document))}</td><td>${esc(x.salarie)}</td>
+        <td>${esc(x.titre)}<div class="discret petit">${esc(x.objet)}${x.objet === "Courrier" ? " · " + esc(x.attendu === "Employeur" ? "employeur seul" : x.attendu) : ""}</div></td>
+        <td><span class="pastille ${CLASSE_ETAPE_SIG[x.etape] || ""}">${esc(x.etape)}</span></td>
+        <td><button class="btn${x.etape.startsWith("À signer") || x.etape === "En attente du salarié" ? " btn-principal" : ""}" data-ouvrir="${x.objet}|${x.objet_id}">Ouvrir</button></td></tr>`).join("")
+        || `<tr><td colspan="5" class="vide">Aucun document${filtre ? " à cette étape" : ""}.</td></tr>`}</tbody></table>`;
+    $$("[data-ouvrir]").forEach(b => b.onclick = () => { const [o, id] = b.dataset.ouvrir.split("|"); ouvrirDocumentASigner(o, id, { apres: recharger }); });
+    $$("[data-etape]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.etape === filtre)));
+  };
+  $$("[data-etape]").forEach(b => b.onclick = () => { filtre = filtre === b.dataset.etape ? "" : b.dataset.etape; dessiner(); });
+  $("#sg-type").onchange = e => { type = e.target.value; dessiner(); };
+  $("#sg-cherche").oninput = e => { cherche = e.target.value.trim().toLowerCase(); dessiner(); };
+  $("#sg-tous").onclick = () => { filtre = ""; type = ""; cherche = ""; $("#sg-type").value = ""; $("#sg-cherche").value = ""; dessiner(); };
+  dessiner();
+}
+
 const PAGES_FINANCES = {
+  signatures: pageSignaturesRH,
   personnel: pagePersonnel,
   mon_dossier: () => pageMonEspace("dossier"), mes_conges: () => pageMonEspace("conges"), mes_bulletins: () => pageMonEspace("bulletins"),
   mes_demandes: () => pageMonEspace("demandes"), mes_evaluations: () => pageMonEspace("evaluations"), mon_equipe: pageMonEquipe,
@@ -8596,6 +8791,8 @@ async function chargerMonEspace() {
   if (etat.monEspace) try {
     [etat.mesFiches, etat.fichesEquipe] = await Promise.all([appeler("mes_fiches_besoin"), etat.monEspace.equipe.length ? appeler("equipe_fiches_besoin") : []]);
   } catch (e) { /* lot 11 absent */ }
+  etat.docsASigner = [];
+  if (etat.monEspace) try { etat.docsASigner = await appeler("mes_documents_a_signer") || []; } catch (e) { /* lot 15 absent */ }
   return etat.monEspace;
 }
 
@@ -8609,6 +8806,8 @@ function rappelsEspace() {
   if (r.demandes_a_viser) pts.push({ texte: `<b>${r.demandes_a_viser} demande(s) de votre équipe</b> (formation, avance) attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
   if (r.evaluations_a_faire) pts.push({ texte: `<b>${r.evaluations_a_faire} évaluation(s) annuelle(s)</b> de votre équipe sont à conduire.`, page: "mon_equipe", bouton: "Évaluer" });
   if (r.reponses) pts.push({ texte: `<b>${r.reponses} réponse(s)</b> à vos demandes ces 7 derniers jours.`, page: "mes_demandes", bouton: "Voir" });
+  const ds = etat.docsASigner || [];
+  if (ds.length) pts.push({ texte: `<b>${ds.length} document(s) à signer</b> : ${esc(ds.slice(0, 3).map(d => d.titre).join(", "))}${ds.length > 3 ? "…" : ""}.`, page: "mon_dossier", bouton: "Signer" });
   const mp = etat.monPointage;
   if (mp && mp.bureaux && mp.horaires && !mp.ferie && !(mp.pointages || []).some(x => x.jour === mp.aujourdhui && x.type === "Arrivée"))
     pts.push({ texte: `<b>Vous n'avez pas encore pointé votre arrivée</b> aujourd'hui (horaires ${mp.horaires[0]} – ${mp.horaires[1]}).`, page: "mon_pointage", bouton: "Pointer" });
@@ -8650,7 +8849,7 @@ async function pageMonEspace(vue) {
 
 async function vueMonDossier(m, zone, actions) {
   const s = m.salarie;
-  const [evs, docs] = await Promise.all([appeler("mes_evenements"), appeler("mes_documents")]);
+  const [evs, docs, aSigner] = await Promise.all([appeler("mes_evenements"), appeler("mes_documents"), appeler("mes_documents_a_signer").catch(() => [])]);
   const carriere = (evs || []).filter(e => !TYPES_DISCIPLINE.includes(e.type)), discipline = (evs || []).filter(e => TYPES_DISCIPLINE.includes(e.type));
   const dl = rows => `<dl class="fiche">${rows.filter(([, v]) => v !== "" && v != null).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
   actions.innerHTML = `<button class="btn" id="b-maj">Signaler un changement</button>`;
@@ -8661,7 +8860,7 @@ async function vueMonDossier(m, zone, actions) {
       ${e.reponse ? `<br><span class="petit"><b>Votre réponse${e.reponse_le ? " du " + esc(dateCourte(e.reponse_le)) : ""} :</b> ${esc(e.reponse)}</span>` : ""}</p>
     <div class="actions-ligne">${e.document_html ? `<button class="btn" data-courrier="${e.id}">Courrier</button>` : ""}
       ${e.type === "Demande d'explication" && e.statut === "Ouvert" && !e.reponse ? `<button class="btn btn-principal" data-repondre="${e.id}">Répondre</button>` : ""}</div></li>`;
-  zone.innerHTML = `<div class="kpis">
+  zone.innerHTML = `${blocMesSignatures(aSigner)}<div class="kpis">
       <div class="kpi"><span class="pastille-ic bleu">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.reste)}</b><span>jours de congé restants</span></span></div>
       <div class="kpi"><span class="pastille-ic vert">${ic("mallette", 20)}</span><span class="kpi-txt"><b>${esc(ancienneteTexte(s.anciennete_mois) || "—")}</b><span>d'ancienneté</span></span></div>
       <div class="kpi"><span class="pastille-ic violet">${ic("personne", 20)}</span><span class="kpi-txt"><b style="font-size:1.05rem">${esc(s.statut || "")}</b><span>${esc(s.type_contrat || "")}</span></span></div></div>
@@ -8686,7 +8885,9 @@ async function vueMonDossier(m, zone, actions) {
         <td class="code">${esc(dateCourte(d.created_at.slice(0, 10)))}</td><td><button class="btn" data-doc="${d.id}">Ouvrir</button></td></tr>`).join("")
         || `<tr><td colspan="4" class="vide">Aucun document numérisé. Vos courriers (contrat, attestations…) figurent dans votre carrière.</td></tr>`}</tbody></table></div>`;
   $("#b-maj").onclick = () => formulaireDemande("Mise à jour du dossier", () => aller("mes_demandes"));
-  $$("[data-courrier]").forEach(b => b.onclick = () => { const e = evs.find(x => x.id === b.dataset.courrier); editeurCourrier(s, { html: e.document_html, titre: e.objet || e.type, evenement: e, lecture: true }); });
+  $$("[data-courrier]").forEach(b => b.onclick = () => { const e = evs.find(x => x.id === b.dataset.courrier);
+    fenetreSignature({ objet: "Courrier", id: e.id, titre: e.objet || e.type, docHtml: e.document_html, nom: nomPersonne(s), attendu: exigenceCourrier(e.type, e.objet), estMoi: true, apres: recharger }); });
+  $$("[data-asigner]").forEach(b => b.onclick = () => { const [o, id] = b.dataset.asigner.split("|"); ouvrirDocumentASigner(o, id, { estMoi: true, apres: recharger }); });
   $$("[data-doc]").forEach(b => b.onclick = async () => {
     const d = docs.find(x => x.id === b.dataset.doc);
     const { data, error } = await sb.storage.from("personnel").createSignedUrl(d.chemin, 120);
@@ -8751,10 +8952,12 @@ async function vueMesConges(m, zone, actions) {
 
 async function vueMesBulletins(m, zone) {
   const buls = await appeler("mes_bulletins") || [];
-  zone.innerHTML = `<p class="discret petit">Vos bulletins des paies validées. Ceux d'avant septembre 2026 ont été établis hors de l'application : demandez-les à la RH si besoin.</p>
+  const nonSignes = new Set(((await appeler("mes_documents_a_signer").catch(() => [])) || []).filter(d => d.objet === "Bulletin").map(d => d.objet_id));
+  zone.innerHTML = `<p class="discret petit">Vos bulletins des paies validées. Signez chaque bulletin pour en accuser réception. Ceux d'avant septembre 2026 ont été établis hors de l'application : demandez-les à la RH si besoin.</p>
     <div class="panneau defil"><table><thead><tr><th>Mois</th><th class="montant">Brut</th><th class="montant">Retenues</th><th class="montant">Net à payer</th><th></th></tr></thead><tbody>
     ${buls.map(b => `<tr><td><b>${esc(MOIS[b.mois - 1])} ${b.annee}</b></td><td class="montant">${fcfa(b.brut)}</td><td class="montant">${fcfa(b.total_retenues)}</td>
-      <td class="montant"><b>${fcfa(b.net_a_payer)}</b></td><td><div class="actions-ligne"><button class="btn" data-voir="${b.id}">Voir</button><button class="btn" data-imp="${b.id}">Imprimer</button></div></td></tr>`).join("")
+      <td class="montant"><b>${fcfa(b.net_a_payer)}</b></td><td><div class="actions-ligne">${nonSignes.has(b.id) ? `<button class="btn btn-principal" data-sig-bul="${b.id}">Signer pour réception</button>` : `<span class="pastille ok">Reçu signé</span>`}
+        <button class="btn" data-voir="${b.id}">Voir</button><button class="btn" data-imp="${b.id}">Imprimer</button></div></td></tr>`).join("")
       || `<tr><td colspan="5" class="vide">Aucun bulletin disponible pour l'instant.</td></tr>`}</tbody></table></div>`;
   const lignes = async id => await appeler("mes_lignes_bulletin", { p_bulletin: id }) || [];
   $$("[data-voir]").forEach(x => x.onclick = async () => {
@@ -8764,6 +8967,7 @@ async function vueMesBulletins(m, zone) {
     $("#mb-imp").onclick = () => imprimerBulletins([b], ls);
   });
   $$("[data-imp]").forEach(x => x.onclick = async () => { const b = buls.find(y => y.id === x.dataset.imp); imprimerBulletins([b], await lignes(b.id)); });
+  $$("[data-sig-bul]").forEach(x => x.onclick = () => ouvrirDocumentASigner("Bulletin", x.dataset.sigBul, { estMoi: true, apres: recharger }));
 }
 
 async function vueMesDemandes(m, zone, actions) {
@@ -8842,6 +9046,7 @@ function formulaireEvaluation(item, apres) {
   const ecritSal = place === "salarie" && e.statut === "Ouverte";
   const ecritResp = ["evaluateur", "rh"].includes(place) && ["Ouverte", "Auto-évaluée"].includes(e.statut);
   const voitResp = place !== "salarie" || ["Évaluée", "Signée", "Close"].includes(e.statut);
+  const signeResp = ["evaluateur", "rh"].includes(place) && e.statut === "Évaluée";
   const note = (k, v, actif, id) => actif ? `<select data-note="${k}" data-id="${esc(id)}" aria-label="Note"><option value="">—</option>${[1, 2, 3, 4, 5].map(n => `<option ${Number(v) === n ? "selected" : ""}>${n}</option>`).join("")}</select>`
     : (v != null && v !== "" ? `<b>${esc(v)}</b>` : `<span class="discret">—</span>`);
   const objectifs = e.objectifs || [];
@@ -8862,7 +9067,11 @@ function formulaireEvaluation(item, apres) {
       <label for="ev-obj">Objectifs pour l'an prochain (un par ligne)</label><textarea id="ev-obj" rows="3">${esc((e.objectifs_suivants || []).map(o => o.objectif).join("\n"))}</textarea>`
       : `<p>${esc(e.commentaire_resp || "—")}</p><p><b>Appréciation :</b> ${esc(e.appreciation || "—")}${e.note_globale != null ? ` · note ${qte(e.note_globale)} / 5` : ""}</p>
         ${(e.objectifs_suivants || []).length ? `<p class="petit"><b>Objectifs pour l'an prochain :</b></p><ul>${e.objectifs_suivants.map(o => `<li>${esc(o.objectif)}</li>`).join("")}</ul>` : ""}`}` : ""}
-    ${place === "salarie" && e.statut === "Évaluée" ? `<h3>Votre signature</h3><label for="ev-csal">Vos remarques sur l'évaluation (facultatif)</label><textarea id="ev-csal" rows="2"></textarea>`
+    ${ecritResp ? `<h3>Votre signature</h3>${champSignature("ev-pad", "Signature du responsable *")}<p class="discret petit">Vous signez en transmettant l'évaluation au salarié.</p>`
+      : signeResp ? `<div id="ev-zone-resp"><h3>Votre signature</h3>${champSignature("ev-pad", "Signature du responsable *")}</div>` : ""}
+    <div id="ev-sigs"></div>
+    ${place === "salarie" && e.statut === "Évaluée" ? `<h3>Votre signature</h3><label for="ev-csal">Vos remarques sur l'évaluation (facultatif)</label><textarea id="ev-csal" rows="2"></textarea>
+      ${champSignature("ev-pad", "Votre signature *")}<p class="discret petit">En signant, vous indiquez avoir pris connaissance de l'évaluation ; vos remarques y sont jointes.</p>`
       : e.commentaire_salarie ? `<p class="petit"><b>Remarques du salarié :</b> ${esc(e.commentaire_salarie)}</p>` : ""}
     ${e.signe_salarie_le ? `<p class="discret petit">Signée par le salarié le ${esc(dateHeure(e.signe_salarie_le))}.</p>` : ""}
     <div class="barre-actions"><button type="button" class="btn" id="ev-imp">Imprimer</button>
@@ -8878,17 +9087,36 @@ function formulaireEvaluation(item, apres) {
   const enregistrer = async soumettre => { await appeler("enregistrer_evaluation", { p_id: e.id, p: lire(), p_soumettre: soumettre }); };
   ouvrirModale(`Évaluation annuelle ${e.annee} — ${nom}`, corps, {
     large: true,
-    libelleSave: ecritSal ? "Transmettre à mon responsable" : ecritResp ? "Transmettre au salarié" : place === "salarie" && e.statut === "Évaluée" ? "Signer" : undefined,
-    onSave: ecritSal || ecritResp || (place === "salarie" && e.statut === "Évaluée") ? async () => {
+    libelleSave: ecritSal ? "Transmettre à mon responsable" : ecritResp ? "Signer et transmettre au salarié" : place === "salarie" && e.statut === "Évaluée" ? "Signer" : signeResp ? "Signer comme responsable" : undefined,
+    onSave: ecritSal || ecritResp || signeResp || (place === "salarie" && e.statut === "Évaluée") ? async () => {
+      const signer = (sig, com) => appeler("signer_document_rh", { p_objet: "Évaluation", p_id: e.id, p_signature: sig, p_guichet: false, p_commentaire: com || null });
       try {
-        if (place === "salarie" && e.statut === "Évaluée") await appeler("signer_evaluation", { p_id: e.id, p_commentaire: $("#ev-csal").value });
-        else {
+        if (place === "salarie" && e.statut === "Évaluée") {
+          const sig = signatureDe("ev-pad"); if (!sig) return "Signez dans le cadre.";
+          await signer(sig, $("#ev-csal").value);
+        } else if (signeResp) {
+          const sig = signatureDe("ev-pad"); if (!sig) return "Signez dans le cadre.";
+          await signer(sig);
+        } else {
           if (ecritSal && !confirm("Transmettre votre auto-évaluation ? Vous ne pourrez plus la modifier.")) return "Non transmise.";
+          const sig = ecritResp ? signatureDe("ev-pad") : null;
+          if (ecritResp && !sig) return "Signez dans le cadre avant de transmettre.";
           await enregistrer(true);
+          if (ecritResp) await signer(sig);
         }
       } catch (err) { return messageErreur(err); }
-      toast(place === "salarie" && e.statut === "Évaluée" ? "Évaluation signée." : "Évaluation transmise."); if (apres) apres();
+      toast(place === "salarie" && e.statut === "Évaluée" || signeResp ? "Évaluation signée." : "Évaluation transmise."); if (apres) apres();
     } : undefined
+  });
+  if ($("#ev-pad")) brancherSignature("ev-pad");
+  const avecSignatures = ["Évaluée", "Signée", "Close"].includes(e.statut);
+  let sigsEval = [];
+  if (avecSignatures) lireSignatures("Évaluation", e.id).then(sg => {
+    sigsEval = sg; if (!$("#ev-sigs")) return;
+    if (sg.length) $("#ev-sigs").innerHTML = `<h3>Signatures</h3>${blocSignaturesHtml(sg, ["Responsable", "Salarié"])}`;
+    if (signeResp && sg.some(x => x.qualite === "Responsable") && $("#ev-zone-resp")) {
+      $("#ev-zone-resp").remove(); const b = $("#modale button[type=submit]"); if (b) b.remove();
+    }
   });
   if ($("#ev-brouillon")) $("#ev-brouillon").onclick = async () => { try { await enregistrer(false); toast("Enregistré."); } catch (err) { toast(messageErreur(err), true); } };
   $("#ev-imp").onclick = () => imprimerHtml(`Évaluation ${e.annee} — ${nom}`, `<h1 style="text-align:center">ENTRETIEN ANNUEL D'ÉVALUATION ${e.annee}</h1>
@@ -8900,8 +9128,8 @@ function formulaireEvaluation(item, apres) {
     ${voitResp ? `<h2>Appréciation du responsable</h2><p>${esc(e.commentaire_resp || "")}</p><p><b>Appréciation générale :</b> ${esc(e.appreciation || "")}${e.note_globale != null ? ` — note moyenne ${qte(e.note_globale)} / 5` : ""}</p>
     ${(e.objectifs_suivants || []).length ? `<h2>Objectifs pour l'année ${e.annee + 1}</h2><ul>${e.objectifs_suivants.map(o => `<li>${esc(o.objectif)}</li>`).join("")}</ul>` : ""}` : ""}
     ${e.commentaire_salarie ? `<p><b>Remarques du salarié :</b> ${esc(e.commentaire_salarie)}</p>` : ""}
-    <table style="margin-top:2rem;border:none;width:100%"><tr><td style="border:none">Le salarié${e.signe_salarie_le ? `<br><span class="discret">signé le ${esc(dateCourte(e.signe_salarie_le.slice(0, 10)))}</span>` : ""}</td>
-      <td style="border:none">Le responsable</td><td style="border:none">La RH</td></tr></table>`);
+    ${sigsEval.length ? blocSignaturesHtml(sigsEval, ["Responsable", "Salarié"]) : `<table style="margin-top:2rem;border:none;width:100%"><tr><td style="border:none">Le salarié</td>
+      <td style="border:none">Le responsable</td><td style="border:none">La RH</td></tr></table>`}`);
 }
 
 /* ---------- Mon équipe (responsable) ---------- */
