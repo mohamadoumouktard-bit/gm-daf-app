@@ -40,6 +40,35 @@ p{margin:0 0 .75rem}
 .num{font-variant-numeric:tabular-nums}
 td.montant,th.montant{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 
+/* ---------- Animation d'accueil (charte GUEST MARKETS) ---------- */
+.gm-anim{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.gm-halo{position:absolute;width:520px;height:520px;right:-160px;top:-220px;border-radius:50%;background:radial-gradient(circle,rgba(16,104,184,.55),rgba(16,104,184,0) 70%);animation:gm-respire 9s ease-in-out infinite}
+.gm-vague{position:absolute;left:0;bottom:0;width:200%;height:46%;animation:gm-glisse 22s linear infinite}
+.gm-v2{height:34%;animation-duration:15s;animation-direction:reverse}
+.gm-sac{position:absolute;bottom:-70px;opacity:0;animation:gm-monte 13s ease-in infinite;filter:drop-shadow(0 4px 8px rgba(0,0,0,.18))}
+.gm-filet{position:absolute;left:0;bottom:0;height:4px;width:100%;background:linear-gradient(90deg,#EE0000 0,#EE0000 22%,#1068B8 22%,#1068B8 100%);transform-origin:left;animation:gm-trace 1.4s cubic-bezier(.2,.7,.2,1) both}
+.gm-entree{animation:gm-entree .7s cubic-bezier(.2,.7,.2,1) both}
+@keyframes gm-glisse{to{transform:translateX(-50%)}}
+@keyframes gm-monte{0%{transform:translateY(0) rotate(-10deg);opacity:0}12%{opacity:.75}85%{opacity:.5}100%{transform:translateY(-560px) rotate(12deg);opacity:0}}
+@keyframes gm-respire{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.15);opacity:1}}
+@keyframes gm-trace{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes gm-entree{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.acces-marque{position:relative;overflow:hidden}.acces-marque>*:not(.gm-anim){position:relative;z-index:1}
+.gm-hero{position:relative;overflow:hidden;border-radius:16px;background:linear-gradient(120deg,#14264A 0%,#0B4F8F 55%,#1068B8 100%);color:#fff;
+  padding:1.6rem 1.8rem 2.6rem;margin-bottom:1.5rem;min-height:150px;box-shadow:0 10px 30px rgba(20,38,74,.22)}
+.gm-hero .gm-sac svg{width:22px;height:auto}.gm-hero .gm-halo{width:380px;height:380px;right:-120px;top:-180px}
+.gm-hero-txt{position:relative;z-index:1}
+.gm-hero-txt h1{color:#fff;font-size:1.85rem;margin:.35rem 0 .2rem;animation:gm-entree .7s .1s cubic-bezier(.2,.7,.2,1) both}
+.gm-hero-txt p{color:#C9D8EE;margin:0;animation:gm-entree .7s .22s cubic-bezier(.2,.7,.2,1) both}
+.gm-hero-marque{display:inline-block;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:#B4C4DE;animation:gm-entree .6s cubic-bezier(.2,.7,.2,1) both}
+.gm-hero-marque b{color:#FF4D4D;font-weight:700}
+.gm-accueil .kpi,.gm-accueil .carte,.gm-accueil .rapide{animation:gm-entree .6s cubic-bezier(.2,.7,.2,1) both}
+.gm-accueil .kpi:nth-child(2){animation-delay:.06s}.gm-accueil .kpi:nth-child(3){animation-delay:.12s}.gm-accueil .kpi:nth-child(4){animation-delay:.18s}.gm-accueil .kpi:nth-child(5){animation-delay:.24s}
+.gm-accueil .deux-col .carte{animation-delay:.25s}.gm-accueil .deux-col .carte+.carte{animation-delay:.35s}.gm-accueil>.carte{animation-delay:.25s}
+.gm-accueil .rapide{animation-delay:.4s}.gm-accueil .rapide:nth-child(2){animation-delay:.46s}.gm-accueil .rapide:nth-child(3){animation-delay:.52s}.gm-accueil .rapide:nth-child(4){animation-delay:.58s}
+@media (max-width:640px){.gm-hero{padding:1.2rem 1.1rem 2.2rem;border-radius:12px}.gm-hero-txt h1{font-size:1.45rem}}
+@media (prefers-reduced-motion:reduce){.gm-anim *,.gm-entree,.gm-hero *,.gm-accueil *{animation:none!important}.gm-sac{display:none}}
+
 /* ---------- Écrans d'accès ---------- */
 #app{min-height:100%;height:100%}
 .acces{min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,460px)}
@@ -722,11 +751,13 @@ const EXPLOITANT = ["admin", "daf", "comptable"];
 const CORRECTION = ["admin", "daf", "comptable"];
 const VALIDATION = ["admin", "daf"];
 const LECTEURS_REPRISE = ["admin", "daf", "comptable", "auditeur"];
+// Référentiels (fournisseurs, produits, catégories, plan comptable…) : données comptables, ouvertes à la comptabilité seulement.
+const REFERENTIELS = ["admin", "daf", "comptable", "auditeur"];
 
 const NAV = [
   { id: "accueil", l: "Accueil", roles: TOUS },
-  { groupe: "Mon espace", roles: TOUT_LE_MONDE, cond: () => aEspace() },
-  { id: "mon_pointage", l: "Pointer", roles: TOUT_LE_MONDE, cond: () => aEspace() },
+  { groupe: "Mon espace", roles: TOUT_LE_MONDE },
+  { id: "mon_pointage", l: "Pointer", roles: TOUT_LE_MONDE },
   { id: "mon_dossier", l: "Mon dossier", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mes_conges", l: "Mes congés", roles: TOUT_LE_MONDE, cond: () => aEspace() },
   { id: "mes_bulletins", l: "Mes bulletins", roles: TOUT_LE_MONDE, cond: () => aEspace() && !estStagiaireEspace() },
@@ -774,16 +805,16 @@ const NAV = [
   { id: "periodes", l: "Clôture du mois", roles: [...FINANCE, "controleur"] },
   { id: "etalements", l: "Charges étalées", roles: FINANCE },
   { id: "reprise", l: "Reprise du classeur", roles: LECTEURS_REPRISE },
-  { groupe: "Référentiels", roles: TOUS },
-  { id: "fournisseurs", l: "Fournisseurs", roles: TOUS },
-  { id: "produits", l: "Produits", roles: TOUS },
-  { id: "categories_produit", l: "Catégories de produits", roles: TOUS },
-  { id: "categories_operation", l: "Catégories d'opérations", roles: TOUS },
-  { id: "plan_comptable", l: "Plan comptable", roles: TOUS },
-  { id: "activites", l: "Activités", roles: TOUS },
-  { id: "sites", l: "Bureaux et sites", roles: TOUS },
-  { id: "departements", l: "Départements", roles: TOUS },
-  { id: "vehicules", l: "Véhicules", roles: TOUS },
+  { groupe: "Référentiels", roles: [...REFERENTIELS, "rh"] },
+  { id: "fournisseurs", l: "Fournisseurs", roles: REFERENTIELS },
+  { id: "produits", l: "Produits", roles: REFERENTIELS },
+  { id: "categories_produit", l: "Catégories de produits", roles: REFERENTIELS },
+  { id: "categories_operation", l: "Catégories d'opérations", roles: REFERENTIELS },
+  { id: "plan_comptable", l: "Plan comptable", roles: REFERENTIELS },
+  { id: "activites", l: "Activités", roles: REFERENTIELS },
+  { id: "sites", l: "Bureaux et sites", roles: REFERENTIELS },
+  { id: "departements", l: "Départements", roles: [...REFERENTIELS, "rh"] },
+  { id: "vehicules", l: "Véhicules", roles: REFERENTIELS },
   { id: "comptes_tresorerie", l: "Comptes de trésorerie", roles: FINANCE },
   { groupe: "Administration", roles: [...new Set([...GESTION, ...LECTEURS_JOURNAL, "dg"])] },
   { id: "parametres", l: "Paramètres de l'entité", roles: TOUS.filter(r => r !== "manager") },
@@ -988,10 +1019,39 @@ async function entrer(session) {
 /* =====================================================================
    Écrans d'accès
    ===================================================================== */
+/* Décor animé aux couleurs GUEST MARKETS : vagues bleues et sacs de courses qui montent,
+   comme le personnage du logo. Purement décoratif ; coupé si l'appareil demande moins d'animations. */
+const SAC_GM = (c, t) => `<svg viewBox="0 0 40 46" width="${t}" height="${Math.round(t * 1.15)}" aria-hidden="true"><path d="M13 14V11a7 7 0 0 1 14 0v3" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/>
+  <path d="M6 14h28l-2.5 28H8.5z" fill="${c}"/><path d="M14 22a6 6 0 0 0 12 0" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".85"/></svg>`;
+function decorGM() {
+  const sacs = [[6, 26, "#FFFFFF", 0, 13], [18, 18, "#EE0000", 3.5, 11], [31, 34, "#5FA8E8", 1.5, 15], [47, 20, "#FFFFFF", 6, 12],
+    [62, 28, "#EE0000", 8.5, 14], [76, 22, "#5FA8E8", 2.5, 12], [88, 32, "#FFFFFF", 5, 16]];
+  return `<div class="gm-anim" aria-hidden="true">
+    <span class="gm-halo"></span>
+    ${sacs.map(([g, t, c, d, v]) => `<span class="gm-sac" style="left:${g}%;animation-delay:${d}s;animation-duration:${v}s">${SAC_GM(c, t)}</span>`).join("")}
+    <svg class="gm-vague gm-v1" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0 60 C150 20 300 100 450 60 S750 20 900 60 S1050 100 1200 60 V120 H0Z" fill="rgba(16,104,184,.55)"/></svg>
+    <svg class="gm-vague gm-v2" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0 70 C200 110 400 30 600 70 S1000 110 1200 70 V120 H0Z" fill="rgba(255,255,255,.10)"/></svg>
+    <span class="gm-filet"></span></div>`;
+}
+// Les chiffres montent de 0 à leur valeur.
+function compterChiffres(racine) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  $$(".kpi-txt b", racine).forEach((b, k) => {
+    const cible = Number(String(b.textContent).replace(/\s|\u202f/g, "")); if (!Number.isFinite(cible) || cible <= 0) return;
+    const debut = performance.now() + k * 90, duree = 900;
+    const pas = t => { const x = Math.min(1, Math.max(0, (t - debut) / duree)); b.textContent = Math.round(cible * (1 - Math.pow(1 - x, 3))).toLocaleString("fr-FR"); if (x < 1) requestAnimationFrame(pas); };
+    b.textContent = "0"; requestAnimationFrame(pas);
+  });
+}
+// Bandeau d'accueil animé (gestion et RH)
+const bandeauAccueil = (titre, sousTitre) => `<section class="gm-hero">${decorGM()}
+  <div class="gm-hero-txt"><span class="gm-hero-marque">GUEST <b>MARKETS</b> · ${APP === "rh" ? "Ressources humaines" : "Gestion administrative et financière"}</span>
+    <h1>${titre}</h1><p>${sousTitre}</p></div></section>`;
+
 function cadreAcces(contenu) {
   $("#app").innerHTML = `<div class="acces">
-    <div class="acces-marque"><span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span>
-      <div><blockquote>${NOM_APP}</blockquote>
+    <div class="acces-marque">${decorGM()}<span class="logo-chip gm-entree"><img src="${LOGO}" alt="GUEST MARKETS"></span>
+      <div class="gm-entree" style="animation-delay:.15s"><blockquote>${NOM_APP}</blockquote>
       <p class="acces-sous">${APP === "rh" ? "Ressources humaines : personnel, paie, congés et espace salarié" : "Gestion administrative, financière et des ressources humaines"}</p></div>
       <small>Accès réservé aux utilisateurs invités</small></div>
     <div class="acces-form">${contenu}</div></div>`;
@@ -1220,6 +1280,8 @@ async function majCloche(n) {
 }
 
 async function aller(page, param = {}) {
+  const nav = NAV.find(n => n.id === page);
+  if (nav && page !== "accueil" && !navPermise(nav)) { toast("Cette page ne vous est pas ouverte.", true); page = "accueil"; param = {}; }
   etat.page = page;
   etat.param = param;
   history.replaceState(null, "", "#/" + page);
@@ -1265,6 +1327,7 @@ async function pageAccueil() {
   const cibles = [["fournisseurs", "Fournisseurs actifs", "camion", "bleu"], ["produits", "Produits actifs", "carton", "orange"],
     ["categories_operation", "Catégories d'opérations", "etiquette", "violet"], ["vehicules", "Véhicules", "voiture", "vert"]];
   if (peut(FINANCE)) cibles.push(["comptes_tresorerie", "Comptes de trésorerie", "portefeuille", "rouge"]);
+  for (let k = cibles.length - 1; k >= 0; k--) if (!NAV.some(n => n.id === cibles[k][0] && navPermise(n))) cibles.splice(k, 1);
   const [comptes, faire, points, soldes] = await Promise.all([
     Promise.all(cibles.map(([t]) => sb.from(t).select("id", { count: "exact", head: true }).eq("actif", true))),
     aFaireFinances(), pointsACompleter(),
@@ -1295,10 +1358,9 @@ async function pageAccueil() {
     .filter(([pg]) => NAV.some(n => n.id === pg && navVisible(n))).slice(0, 4);
   const PLAFOND = 6;
 
-  $("#contenu").innerHTML = `<div class="accueil">
-    <div class="entete-page"><div><h1>${salut} ${esc(p.prenom || nomComplet(p))}</h1>
-      <p class="discret">Voici l'essentiel de votre activité · ${esc(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))}</p></div></div>
-    <div class="kpis">${cibles.map(([t, l, i, c], k) => `<a class="kpi" href="#/${t}" data-aller="${t}"><span class="pastille-ic ${c}">${ic(i, 20)}</span>
+  $("#contenu").innerHTML = `<div class="accueil gm-accueil">
+    ${bandeauAccueil(`${salut} ${esc(p.prenom || nomComplet(p))}`, `Voici l'essentiel de votre activité · ${esc(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))}`)}
+    ${cibles.length ? "" : "<!-- pas de chiffres de référentiel -->"}<div class="kpis"${cibles.length ? "" : " hidden"}>${cibles.map(([t, l, i, c], k) => `<a class="kpi" href="#/${t}" data-aller="${t}"><span class="pastille-ic ${c}">${ic(i, 20)}</span>
       <span class="kpi-txt"><b>${comptes[k].count ?? "—"}</b><span>${esc(l)}</span></span></a>`).join("")}</div>
     <div class="deux-col">
       ${peut([...FINANCE, "caissier"]) ? `<section class="carte"><div class="carte-tete"><h2>Trésorerie</h2><span class="total-carte"><small>Solde total</small>
@@ -1321,6 +1383,7 @@ async function pageAccueil() {
       <span><b>${esc(l)}</b><small>${esc(d)}</small></span>${ic("chevron", 16)}</a>`).join("")}</div>` : ""}
   </div>`;
   brancherAller();
+  compterChiffres($("#contenu"));
   if ($("#b-tout-traiter")) $("#b-tout-traiter").onclick = () => { $$(".traiter li.cache").forEach(li => { li.hidden = false; }); $("#b-tout-traiter").remove(); };
 }
 
@@ -1352,9 +1415,8 @@ async function pageAccueilRH() {
     ["mes_besoins", "Mes fiches de besoin", "Exprimer un besoin payé par la caisse, le justifier", "orange"],
     ["mon_equipe", "Mon équipe", "Congés et demandes à viser", "bleu"]]
     .filter(([pg]) => NAV.some(n => n.id === pg && navVisible(n)));
-  $("#contenu").innerHTML = `<div class="accueil">
-    <div class="entete-page"><div><h1>${salut} ${esc(p.prenom || nomComplet(p))}</h1>
-      <p class="discret">Ressources humaines · ${esc(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))}</p></div></div>
+  $("#contenu").innerHTML = `<div class="accueil gm-accueil">
+    ${bandeauAccueil(`${salut} ${esc(p.prenom || nomComplet(p))}`, `Ressources humaines · ${esc(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))}`)}
     <section class="carte pleine"><div class="carte-tete"><h2>À traiter</h2><span class="badge-compte">${items.length}</span></div>
       ${items.length ? `<ul class="liste-carte traiter">${items.map(x => `<li>
         <span class="pastille-ic petit ${/alerte|échue|sans|aucun/i.test(x.titre + x.precision) ? "rouge" : "orange"}">${ic(ICONE_PAGE[x.page] || "alerte", 16)}</span>
@@ -1370,6 +1432,9 @@ async function pageAccueilRH() {
 
 /* Chaque point n'est montré qu'à ceux qui peuvent le traiter. */
 async function pointsACompleter() {
+  return (await pointsACompleterTous()).filter(p => !p.page || NAV.some(n => n.id === p.page && navPermise(n)));
+}
+async function pointsACompleterTous() {
   const pts = [];
   const e = etat.entite || {};
   const { data: cats } = await sb.from("categories_produit").select("id, libelle, manager_id").eq("actif", true);
@@ -7513,7 +7578,12 @@ function maPosition() {
 /* ---------- Le salarié : pointer ---------- */
 async function pageMonPointage() {
   const p = await appeler("mon_pointage");
-  if (!p) { $("#contenu").innerHTML = `<div class="vide">Votre compte n'est relié à aucune fiche du personnel. Adressez-vous à la RH.</div>`; return; }
+  if (!p) { $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Pointer</h1></div></div>
+    <div class="panneau" style="padding:1.5rem;max-width:640px"><p><b>Votre compte n'est pas encore relié à votre fiche du personnel.</b></p>
+      <p class="discret">Le pointage s'enregistre sur votre fiche (matricule, horaires, bureau). La RH ou le DAF relie votre compte depuis
+      Dossier du personnel › votre fiche › « Accès à l'application » › « Relier un compte existant ».</p>
+      ${peut(["rh", "daf", "admin"]) ? `<p><button class="btn btn-principal" data-aller="personnel">Ouvrir le dossier du personnel</button></p>` : ""}</div>`;
+    brancherAller(); return; }
   const duJour = (p.pointages || []).filter(x => x.jour === p.aujourdhui);
   const arrivee = duJour.find(x => x.type === "Arrivée"), depart = duJour.find(x => x.type === "Départ");
   const prochain = !arrivee ? "Arrivée" : !depart ? "Départ" : null;
