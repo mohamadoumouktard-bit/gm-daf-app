@@ -2198,7 +2198,7 @@ async function aFaireFinances() {
     const nc = await compter(sb.from("conges").select("id", { count: "exact", head: true }).eq("statut", "Visé"));
     if (nc) pts.push({ texte: `<b>${nc} demande(s) de congé visée(s)</b> par le responsable attendent la décision de la RH.`, page: "conges", bouton: "Décider" });
     const { data: dm } = await sb.from("demandes_rh").select("type, statut").in("statut", ["Demandée", "Visée", "Acceptée"]);
-    const nd = (dm || []).filter(d => d.statut !== "Demandée" || !["Formation", "Avance sur salaire"].includes(d.type)).length;
+    const nd = (dm || []).filter(d => d.statut !== "Demandée" || !TYPES_AVEC_VISA.includes(d.type)).length;
     if (nd) pts.push({ texte: `<b>${nd} demande(s) du personnel</b> (attestations, mises à jour du dossier, formations, avances) sont à traiter.`, page: "demandes_personnel", bouton: "Traiter" });
     const ne = await compter(sb.from("evaluations").select("id", { count: "exact", head: true }).in("statut", ["Évaluée", "Signée"]));
     if (ne) pts.push({ texte: `<b>${ne} évaluation(s) annuelle(s)</b> faites par les responsables sont à clôturer.`, page: "evaluations", bouton: "Clôturer" });
@@ -8839,6 +8839,8 @@ async function aFaireSupply(pts) {
    Le salarié ne lit aucune table : tout passe par les fonctions mon_espace,
    mes_bulletins, mes_conges… qui ne rendent que ce qui le concerne.
    ===================================================================== */
+// Seule la formation passe par le responsable ; tout ce qui touche au salaire (avance, attestation de salaire) va directement à la RH, par confidentialité.
+const TYPES_AVEC_VISA = ["Formation"];
 const TYPES_DEMANDE = ["Formation", "Attestation de travail", "Attestation de salaire", "Attestation de stage", "Avance sur salaire", "Mise à jour du dossier", "Autre"];
 const CLASSE_DEMANDE = { "Demandée": "attente", "Visée": "attente", "Acceptée": "ok", "Traitée": "ok", "Refusée": "alerte", "Annulée": "inactif" };
 const CLASSE_CONGE_ESP = { "Demandé": "attente", "Visé": "attente", "Approuvé": "ok", "Refusé": "alerte", "Annulé": "inactif" };
@@ -8851,7 +8853,7 @@ const aEspace = () => !!etat.monEspace;
 const estStagiaireEspace = () => !!etat.monEspace && etat.monEspace.salarie.type_contrat === "Stage";
 const aUneEquipe = () => !!etat.monEspace && (etat.monEspace.equipe || []).length > 0;
 const statutConge = c => c.statut === "Visé" ? "Visé, en attente de la RH" : c.statut === "Demandé" ? "En attente du responsable" : c.statut;
-const statutDemande = d => d.statut === "Visée" ? "Visée, en attente de la RH" : d.statut === "Demandée" ? (["Formation", "Avance sur salaire"].includes(d.type) ? "En attente du responsable" : "En attente de la RH") : d.statut;
+const statutDemande = d => d.statut === "Visée" ? "Visée, en attente de la RH" : d.statut === "Demandée" ? (TYPES_AVEC_VISA.includes(d.type) ? "En attente du responsable" : "En attente de la RH") : d.statut;
 const compterJoursOuvrables = (a, b) => { if (!a || !b || b < a) return 0; let n = 0;
   for (let d = new Date(a + "T00:00:00"); d <= new Date(b + "T00:00:00"); d.setDate(d.getDate() + 1)) if (d.getDay() !== 0) n++; return n; };
 
@@ -8876,7 +8878,7 @@ function rappelsEspace() {
   if (r.explications) pts.push({ texte: `<b>${r.explications} demande(s) d'explication</b> attendent votre réponse (48 heures).`, page: "mon_dossier", bouton: "Répondre" });
   if (r.evaluations) pts.push({ texte: `<b>Votre évaluation annuelle</b> attend votre auto-évaluation ou votre signature.`, page: "mes_evaluations", bouton: "Ouvrir" });
   if (r.conges_a_viser) pts.push({ texte: `<b>${r.conges_a_viser} demande(s) de congé de votre équipe</b> attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
-  if (r.demandes_a_viser) pts.push({ texte: `<b>${r.demandes_a_viser} demande(s) de votre équipe</b> (formation, avance) attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
+  if (r.demandes_a_viser) pts.push({ texte: `<b>${r.demandes_a_viser} demande(s) de votre équipe</b> (formation) attendent votre visa.`, page: "mon_equipe", bouton: "Viser" });
   if (r.evaluations_a_faire) pts.push({ texte: `<b>${r.evaluations_a_faire} évaluation(s) annuelle(s)</b> de votre équipe sont à conduire.`, page: "mon_equipe", bouton: "Évaluer" });
   if (r.reponses) pts.push({ texte: `<b>${r.reponses} réponse(s)</b> à vos demandes ces 7 derniers jours.`, page: "mes_demandes", bouton: "Voir" });
   const ds = etat.docsASigner || [];
@@ -9046,7 +9048,7 @@ async function vueMesBulletins(m, zone) {
 async function vueMesDemandes(m, zone, actions) {
   const dem = await appeler("mes_demandes") || [];
   actions.innerHTML = `<button class="btn btn-principal" id="b-dem">Nouvelle demande</button>`;
-  zone.innerHTML = `<p class="discret petit">Formation et avance sur salaire passent d'abord par votre responsable ; les attestations et les mises à jour de votre dossier vont directement à la RH.</p>
+  zone.innerHTML = `<p class="discret petit">Seules les demandes de formation passent d'abord par votre responsable. Les avances sur salaire, les attestations et les mises à jour de votre dossier vont directement à la RH : votre responsable ne les voit pas.</p>
     <div class="panneau defil"><table><thead><tr><th>Date</th><th>Demande</th><th>Statut</th><th>Réponse</th><th></th></tr></thead><tbody>
     ${dem.map(d => `<tr><td class="code">${esc(dateCourte(d.created_at.slice(0, 10)))}</td><td><b>${esc(d.type)}</b><div class="petit">${esc(d.objet)}</div>
       ${d.type === "Avance sur salaire" && d.donnees.montant ? `<div class="discret petit">${fcfa(d.donnees.montant)} FCFA</div>` : ""}</td>
@@ -9276,7 +9278,7 @@ async function pageDemandesPersonnel() {
   const tableau = liste => `<div class="defil"><table><thead><tr><th>Date</th><th>Salarié</th><th>Demande</th><th>Avis du responsable</th><th>Statut</th><th></th></tr></thead><tbody>
     ${liste.map(d => { const s = qui(d.salarie_id); return `<tr><td class="code">${esc(dateCourte(d.created_at.slice(0, 10)))}</td><td>${esc(nomPersonne(s))}<div class="discret petit">${esc(s.emploi || "")}</div></td>
       <td><b>${esc(d.type)}</b><div class="petit">${esc(d.objet)}</div>${d.details ? `<div class="discret petit">${esc(d.details)}</div>` : ""}${detailsDemande(d)}</td>
-      <td class="petit">${d.avis_responsable ? `${esc(d.avis_responsable)}${d.avis_commentaire ? " — " + esc(d.avis_commentaire) : ""}<div class="discret">${esc(nomProfil(d.avis_par))}</div>` : ["Formation", "Avance sur salaire"].includes(d.type) && d.statut === "Demandée" ? `<span class="discret">en attente</span>` : ""}</td>
+      <td class="petit">${d.avis_responsable ? `${esc(d.avis_responsable)}${d.avis_commentaire ? " — " + esc(d.avis_commentaire) : ""}<div class="discret">${esc(nomProfil(d.avis_par))}</div>` : TYPES_AVEC_VISA.includes(d.type) && d.statut === "Demandée" ? `<span class="discret">en attente</span>` : ""}</td>
       <td><span class="pastille ${CLASSE_DEMANDE[d.statut] || ""}">${esc(d.statut)}</span>${d.reponse ? `<div class="petit">${esc(d.reponse)}</div>` : ""}</td>
       <td>${ecrire && ["Demandée", "Visée", "Acceptée"].includes(d.statut) ? `<button class="btn btn-principal" data-traiter="${d.id}">Traiter</button>` : ""}</td></tr>`; }).join("")
       || `<tr><td colspan="6" class="vide">Aucune demande.</td></tr>`}</tbody></table></div>`;
