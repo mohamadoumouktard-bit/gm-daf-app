@@ -884,6 +884,8 @@ function messageLien(h) {
 }
 
 const hashInitial = new URLSearchParams(location.hash.slice(1));
+// Lien d'activation transmis par la RH ou le DAF : ?activation=<jeton haché>&t=invite|recovery
+const rechercheInitiale = new URLSearchParams(location.search);
 const etat = {
   session: null, profil: null, page: "accueil", entite: {},
   doitDefinirMdp: ["invite", "recovery"].includes(hashInitial.get("type")),
@@ -992,6 +994,7 @@ async function demarrer() {
     if (evenement === "SIGNED_OUT") setTimeout(ecranConnexion, 0);
   });
   surveillerSession();
+  if (rechercheInitiale.get("activation")) return ecranActivation(rechercheInitiale.get("activation"), rechercheInitiale.get("t"));
   const { data } = await sb.auth.getSession();
   if (data.session) {
     if (hashInitial.get("access_token")) ouvrirSession();
@@ -1091,6 +1094,30 @@ function ecranConnexion() {
     const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: adresseRetour() });
     $("#c-err").innerHTML = error ? `<div class="erreur">${esc(messageErreur(error))}</div>`
       : `<div class="info">Si ce compte existe, un lien de réinitialisation vient d'être envoyé.</div>`;
+  };
+}
+
+/* Activation d'un accès : rien n'est consommé à l'ouverture de la page ; le jeton n'est vérifié qu'au clic. */
+function ecranActivation(jeton, type) {
+  const invite = type !== "recovery";
+  cadreAcces(`<h1>${invite ? "Activer votre accès" : "Nouveau mot de passe"}</h1>
+    <p>${invite ? "Votre accès à l'application a été créé." : "Un nouveau lien d'accès a été produit pour votre compte."}
+      Cliquez sur « Continuer », puis choisissez votre mot de passe.</p>
+    <div id="a-err"></div>
+    <p style="margin-top:1.25rem"><button class="btn btn-principal" type="button" id="a-ok">Continuer</button></p>
+    <p class="discret petit">Ce lien est personnel et ne sert qu'une fois. Ne le transférez pas.</p>`);
+  $("#a-ok").onclick = async () => {
+    const b = $("#a-ok"); b.disabled = true; b.textContent = "Vérification…";
+    const { data, error } = await sb.auth.verifyOtp({ token_hash: jeton, type: invite ? "invite" : "recovery" });
+    if (error || !data || !data.session) {
+      b.disabled = false; b.textContent = "Continuer";
+      $("#a-err").innerHTML = `<div class="erreur">Ce lien a expiré ou a déjà servi. Demandez un nouveau lien à la RH ou au DAF.</div>`;
+      return;
+    }
+    history.replaceState(null, "", location.pathname);
+    ouvrirSession();
+    etat.doitDefinirMdp = true; etat.premiereConnexion = invite;
+    await entrer(data.session);
   };
 }
 
@@ -1862,8 +1889,8 @@ function formulairePoste(p) {
 /* Le lien d'accès, à copier ou à envoyer. Il ouvre le compte : on le rappelle. */
 function afficherLienAcces(lien, { prenom, email, nouveau }) {
   const message = `Bonjour ${prenom || ""}, voici votre accès à l'application de gestion de ` +
-    `${etat.entite.raison_sociale || "GUEST MARKETS"}. Ouvrez ce lien pour choisir votre mot de passe ` +
-    `(il n'est valable que peu de temps) : ${lien}`;
+    `${etat.entite.raison_sociale || "GUEST MARKETS"}. Ouvrez ce lien, cliquez sur « Continuer » puis choisissez votre mot de passe ` +
+    `(lien personnel, à utiliser rapidement) : ${lien}`;
   ouvrirModale(nouveau ? "Accès créé" : "Nouveau lien d'accès", `
     <p>${nouveau ? `Le compte de <b>${esc(email)}</b> est créé et actif.` : `Nouveau lien pour <b>${esc(email)}</b>.`}
       Transmettez-lui ce lien : il lui permettra de choisir son mot de passe.</p>
@@ -1875,8 +1902,8 @@ function afficherLienAcces(lien, { prenom, email, nouveau }) {
       <a class="btn" href="mailto:${esc(email)}?subject=${encodeURIComponent("Votre accès à l'application GUEST MARKETS")}&body=${encodeURIComponent(message)}">Envoyer par e-mail</a>
     </div>
     <div class="info" style="margin-top:1rem"><b>Ce lien ouvre le compte.</b> Ne le transmettez qu'à la personne
-      concernée. Il n'est valable qu'une heure et ne sert qu'une fois ; s'il a expiré, ouvrez la fiche de l'utilisateur
-      et demandez un nouveau lien.</div>`, {});
+      concernée et ne l'ouvrez pas vous-même : il ne sert qu'une fois, au clic sur « Continuer ». L'aperçu de WhatsApp
+      ne l'use pas. S'il a expiré, ouvrez la fiche de l'utilisateur et produisez un nouveau lien.</div>`, {});
   $("#l-copier").onclick = async () => {
     try { await navigator.clipboard.writeText(lien); toast("Lien copié."); }
     catch (e) { $("#l-lien").select(); document.execCommand("copy"); toast("Lien copié."); }
