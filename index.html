@@ -848,7 +848,8 @@ const NOMS_TABLES = {
   clients: "Clients", documents_vente: "Ventes (proformas, factures, avoirs)", lignes_vente: "Lignes de vente", relances: "Relances",
   salaries: "Personnel", elements_fixes: "Éléments de rémunération", variables_paie: "Éléments du mois (paie)", conges: "Congés",
   parametres_paie: "Paramètres de paie", baremes_paie: "Barèmes de paie", rubriques_paie: "Rubriques de paie", periodes_paie: "Périodes de paie",
-  immobilisations: "Immobilisations", releves_bancaires: "Relevés bancaires", lignes_releve: "Lignes de relevé", budgets: "Budget", etalements: "Charges étalées", regles_postes: "Règles des postes des états"
+  immobilisations: "Immobilisations", releves_bancaires: "Relevés bancaires", lignes_releve: "Lignes de relevé", budgets: "Budget", etalements: "Charges étalées", regles_postes: "Règles des postes des états",
+  acces_utilisateurs: "Accès des utilisateurs (invitations, liens d'accès)"
 };
 const LIB_ACTIONS = { INSERT: "Création", UPDATE: "Modification", DELETE: "Suppression" };
 
@@ -1017,6 +1018,22 @@ async function demarrer() {
   } else ecranConnexion();
 }
 
+/* Un lien d'accès produit par quelqu'un d'autre pour un compte déjà utilisé remplace son mot de passe :
+   la personne en est prévenue à sa connexion suivante (audit de sécurité du 12/11/2026). */
+async function alerterAcces() {
+  let liste = [];
+  try { liste = await appeler("mes_alertes_acces") || []; } catch (e) { return; }
+  const cle = "gm_acces_vu_" + etat.profil.id;
+  let vu = 0; try { vu = Number(localStorage.getItem(cle)) || 0; } catch (e) { /* stockage indisponible */ }
+  const neufs = liste.filter(a => Number(a.id) > vu);
+  if (!neufs.length) return;
+  ouvrirModale("Accès à votre compte", `<p>Un nouveau lien d'accès à votre compte a été produit par une autre personne. Ce lien permet de choisir un nouveau mot de passe, donc d'entrer dans votre compte.</p>
+    <ul>${neufs.map(a => `<li>Le ${esc(dateHeure(a.le))}, par <b>${esc(a.par)}</b></li>`).join("")}</ul>
+    <p><b>Vous l'aviez demandé</b> (mot de passe perdu) : tout est normal.</p>
+    <p><b>Vous ne l'aviez pas demandé</b> : changez votre mot de passe dans « Mon profil » et prévenez le DAF. Chaque lien produit reste inscrit au journal des modifications.</p>`,
+    { libelleSave: "J'ai compris", onSave: async () => { try { localStorage.setItem(cle, String(Math.max(...neufs.map(a => Number(a.id))))); } catch (e) { /* stockage indisponible */ } } });
+}
+
 async function entrer(session) {
   etat.session = session;
   const { data, error } = await sb.from("profils").select("*").eq("id", session.user.id).maybeSingle();
@@ -1031,6 +1048,7 @@ async function entrer(session) {
   if (appAttendue() !== APP) { location.replace(adresseApp(appAttendue()) + location.hash); return; }
   etat.page = NAV.some(n => n.id === demandee && navVisible(n)) ? demandee : seulementSalarie() ? "mon_pointage" : estLivreurSeul() ? "ma_tournee" : "accueil";
   rendreCoque();
+  alerterAcces();
 }
 
 /* =====================================================================
