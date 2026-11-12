@@ -110,6 +110,20 @@ input:disabled,select:disabled,textarea:disabled{background:var(--papier);color:
 .barre-tete .sous-logo{display:block;font-size:.78rem;color:#8EA3C4;margin-top:.55rem;letter-spacing:.02em}
 .barre nav{padding:.6rem .6rem 1rem;flex:1;overflow-y:auto}
 .barre .groupe{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:1rem .7rem .35rem;color:#7389AD}
+.barre button.groupe{display:flex;align-items:center;gap:.45rem;width:100%;background:none;border:0;border-radius:8px;cursor:pointer;text-align:left;font-family:inherit;padding:.75rem .7rem .55rem;margin-top:.15rem}
+.barre button.groupe:hover{color:#B4C4DE;background:rgba(255,255,255,.04)}
+.barre button.groupe span:first-child{flex:1}
+.ng-nb{font-size:.68rem;font-weight:600;letter-spacing:0;background:rgba(255,255,255,.08);color:#9FB2D0;border-radius:999px;padding:0 .45rem;line-height:1.5;transition:opacity .2s}
+.ng-fleche{display:grid;place-items:center;transition:transform .25s ease}
+.nav-groupe.ouvert .ng-fleche{transform:rotate(90deg)}
+.nav-groupe.ouvert .ng-nb{opacity:0}
+.nav-groupe.contient:not(.ouvert) > .groupe{color:#fff}
+.nav-groupe.contient:not(.ouvert) .ng-nb{background:var(--registre);color:#fff}
+.nav-liens{display:grid;grid-template-rows:0fr;transition:grid-template-rows .25s ease}
+.nav-liens > div{overflow:hidden;min-height:0}
+.nav-groupe.ouvert .nav-liens{grid-template-rows:1fr}
+.nav-groupe:not(.ouvert) .nav-liens a{visibility:hidden}
+@media (prefers-reduced-motion:reduce){.nav-liens,.ng-fleche{transition:none}}
 .barre a{display:flex;align-items:center;gap:.65rem;padding:.48rem .7rem;border-radius:8px;color:var(--barre-texte);text-decoration:none;font-size:.92rem}
 .barre a .ic{opacity:.8}
 .barre a:hover{background:rgba(255,255,255,.07);color:#fff}
@@ -1225,11 +1239,30 @@ function placeDansNav(page) {
   return { groupe: "", l: "Accueil" };
 }
 
+const groupeDePage = page => { const a = $(`.barre a[data-page="${page}"]`); const g = a && a.closest(".nav-groupe"); return g ? g.dataset.groupe : null; };
+function plierMenu(ouvert) {
+  $$(".nav-groupe").forEach(g => {
+    const o = g.dataset.groupe === ouvert;
+    g.classList.toggle("ouvert", o);
+    g.querySelector(".groupe").setAttribute("aria-expanded", String(o));
+    g.classList.toggle("contient", !!g.querySelector("a[aria-current=page]"));
+  });
+}
+
 function rendreCoque() {
   const p = etat.profil;
-  const liens = NAV.filter(navVisible).map(n => n.groupe
-    ? `<div class="groupe">${esc(n.groupe)}</div>`
-    : `<a href="#/${n.id}" data-page="${n.id}">${ic(ICONE_PAGE[n.id])}<span>${esc(n.l)}</span></a>`).join("");
+  // Menu en accordéon : chaque groupe se plie ; celui de la page en cours s'ouvre seul.
+  const blocs = []; let bloc = null;
+  NAV.filter(navVisible).forEach(n => {
+    if (n.groupe) { bloc = { g: n.groupe, liens: [] }; blocs.push(bloc); return; }
+    const a = `<a href="#/${n.id}" data-page="${n.id}">${ic(ICONE_PAGE[n.id])}<span>${esc(n.l)}</span></a>`;
+    if (bloc) bloc.liens.push(a); else blocs.push({ seul: a });
+  });
+  const groupeNav = (g, liens, k) => `<div class="nav-groupe" data-groupe="${esc(g)}">
+      <button type="button" class="groupe" aria-expanded="false" aria-controls="ng-${k}"><span>${esc(g)}</span>
+        <span class="ng-nb" aria-hidden="true">${liens.length}</span><span class="ng-fleche" aria-hidden="true">${ic("chevron", 14)}</span></button>
+      <div class="nav-liens" id="ng-${k}"><div>${liens.join("")}</div></div></div>`;
+  const liens = blocs.filter(b => b.seul || b.liens.length).map((b, k) => b.seul || groupeNav(b.g, b.liens, k)).join("");
   const nouvelles = [[SAISIE_ACHAT, "achats", "panier", "Un achat"], [FINANCE, "tresorerie", "portefeuille", "Une dépense ou une recette"],
     [VENTE, "ventes", "facture", "Une vente ou une facture"], [PAIE_PREPARE, "paie", "billet", "Un élément de paie"]]
     .filter(([r, pg]) => peut(r) && (APP !== "rh" || PAGES_RH.has(pg)));
@@ -1240,7 +1273,7 @@ function rendreCoque() {
       <div class="barre-tete"><button class="b-fermer-menu" id="b-fermer-menu" aria-label="Fermer le menu">✕</button>
         <span class="logo-chip"><img src="${LOGO}" alt="GUEST MARKETS"></span><span class="sous-logo">${NOM_APP}</span></div>
       <nav aria-label="Navigation principale">${liens}
-        ${autre ? `<div class="groupe">Autre application</div><a href="${adresseApp(autre[0])}" class="lien-app">${ic("fleche")}<span>${esc(autre[1])}</span></a>` : ""}</nav>
+        ${autre ? groupeNav("Autre application", [`<a href="${adresseApp(autre[0])}" class="lien-app">${ic("fleche")}<span>${esc(autre[1])}</span></a>`], "app") : ""}</nav>
       <div class="barre-pied"><span class="avatar" aria-hidden="true">${esc(initiales(p).toUpperCase())}</span>
         <div class="qui"><b>${esc(nomComplet(p))}</b><span>${esc(libelleRoles(p))}</span></div>
         <button class="b-deco" id="b-deco" title="Se déconnecter" aria-label="Se déconnecter">${ic("sortie")}</button></div>
@@ -1277,6 +1310,11 @@ function rendreCoque() {
     if (!e.target.closest(".recherche") && $("#resultats-page")) $("#resultats-page").hidden = true;
   };
   $$(".barre a[data-page]").forEach(a => a.onclick = e => { e.preventDefault(); menu(false); aller(a.dataset.page); });
+  $$(".nav-groupe > .groupe").forEach(b => b.onclick = () => {
+    const ouvrir = b.getAttribute("aria-expanded") !== "true";
+    plierMenu(ouvrir ? b.parentElement.dataset.groupe : null);
+  });
+  plierMenu(groupeDePage(etat.page));
   $("#b-cloche").onclick = () => aller("accueil");
   if ($("#b-nouvelle")) {
     $("#b-nouvelle").onclick = () => { const m = $("#menu-nouvelle"); m.hidden = !m.hidden; $("#b-nouvelle").setAttribute("aria-expanded", String(!m.hidden)); };
@@ -1314,6 +1352,7 @@ async function aller(page, param = {}) {
   etat.param = param;
   history.replaceState(null, "", "#/" + page);
   $$(".barre a").forEach(a => a.dataset.page === page ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  if ($(".nav-groupe")) plierMenu(groupeDePage(page) ?? ($(".nav-groupe.ouvert") || {}).dataset?.groupe ?? null);
   if ($("#ariane")) {
     const pl = placeDansNav(page);
     $("#ariane").innerHTML = page === "accueil" ? `${ic("accueil", 16)}<b>Accueil</b>`
