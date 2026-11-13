@@ -1010,6 +1010,7 @@ async function demarrer() {
   });
   surveillerSession();
   if (rechercheInitiale.get("activation")) return ecranActivation(rechercheInitiale.get("activation"), rechercheInitiale.get("t"));
+  if (rechercheInitiale.get("v")) return ecranVerification(rechercheInitiale.get("v"));
   const { data } = await sb.auth.getSession();
   if (data.session) {
     if (hashInitial.get("access_token")) ouvrirSession();
@@ -1043,6 +1044,8 @@ async function entrer(session) {
   etat.entite = ent || {};
   if (etat.doitDefinirMdp) return ecranDefinirMdp();
   if (error || !data || !data.actif) return ecranEnAttente();
+  // La personne s'est connectée depuis la page de vérification d'un document : on y revient, montants affichés.
+  if (etat.verifEnAttente) { const c = etat.verifEnAttente; etat.verifEnAttente = null; return ecranVerification(c); }
   const demandee = location.hash.replace("#/", "");
   await chargerMonEspace();
   try { await chargerListe("departements"); } catch (e) { etat.refs.departements = []; }
@@ -1130,6 +1133,60 @@ function ecranConnexion() {
 }
 
 /* Activation d'un accès : rien n'est consommé à l'ouverture de la page ; le jeton n'est vérifié qu'au clic. */
+/* Vérification d'un document par son QR code : page publique, sans connexion.
+   Elle montre ce que la base a enregistré ; la personne compare avec le papier qu'elle tient. */
+async function ecranVerification(code) {
+  const accueil = `<p style="margin-top:1.25rem"><a class="btn" href="${esc(location.pathname)}">Ouvrir l'application</a></p>`;
+  cadreAcces(`<h1>Vérification d'un document</h1><p class="discret">Recherche du document…</p>`);
+  let d, panne = false;
+  try { d = await appeler("verifier_document", { p_code: String(code).slice(0, 60) }); } catch (e) { panne = true; }
+  if (panne) return cadreAcces(`<h1>Vérification d'un document</h1>
+    <div class="info">La vérification n'a pas pu se faire (connexion internet ?). Rechargez la page pour réessayer.</div>${accueil}`);
+  if (!d) return cadreAcces(`<h1>Document non reconnu</h1>
+    <div class="erreur"><b>Ce code ne correspond à aucun document enregistré par GUEST MARKETS.</b></div>
+    <p>Si ce code figure sur un document qui vous a été remis, ce document n'est pas authentique, ou son QR code a été altéré. Signalez-le à la direction financière de GUEST MARKETS.</p>${accueil}`);
+  const TITRES = { "Pièce de caisse": "Pièce de caisse", "Fiche de besoin": "Fiche d'expression de besoin", "Bulletin": "Bulletin de paie", "Opération": "Pièce de trésorerie" };
+  const titre = TITRES[d.objet] || "Document";
+  if (d.supprime) return cadreAcces(`<h1>Document remplacé</h1>
+    <div class="erreur"><b>Ce document (${esc(titre.toLowerCase())}) a bien été émis par ${esc(d.entite)}, mais il a été supprimé ou remplacé depuis.</b></div>
+    <p>Le papier que vous tenez n'est plus valable. Demandez la version en vigueur.</p>${accueil}`);
+  const mauvais = ["Annulée", "Refusée"].includes(d.statut), provisoire = /provisoire|À signer/.test(d.statut || "");
+  // Les montants ne sont pas publics : la base ne les donne qu'à un compte connecté qui a le droit de lire le document.
+  const masque = !!d.montants_masques;
+  const { data: ses } = await sb.auth.getSession();
+  const connecte = !!(ses && ses.session);
+  const montant = v => masque ? `<span class="discret">Masqué</span>` : `<b>${fcfa(v)} FCFA</b>`;
+  const rg = (l, v) => v ? `<tr><th style="text-align:left;padding:.35rem .8rem .35rem 0;vertical-align:top;white-space:nowrap;font-weight:600">${l}</th><td style="padding:.35rem 0">${v}</td></tr>` : "";
+  const le = v => v ? esc(quandHeure(v)) : "";
+  cadreAcces(`<h1>${esc(titre)}${d.numero ? " n° " + esc(d.numero) : ""}</h1>
+    ${mauvais ? `<div class="erreur"><b>Document ${d.statut === "Refusée" ? "refusé" : "annulé"}.</b> Il a bien été émis par ${esc(d.entite)}, mais il n'est plus valable.</div>`
+      : `<div style="background:#E6F4EA;color:#17603A;padding:.6rem .8rem;border-radius:var(--rayon);margin-top:1rem;font-size:.9rem"><b>Document authentique</b>, enregistré par ${esc(d.entite)}.</div>`}
+    ${provisoire ? `<div class="info">${d.statut === "À signer" ? "Cette pièce attend encore la signature du bénéficiaire : la somme n'a pas été remise." : esc(d.statut) + "."}</div>` : ""}
+    <table style="width:100%;border-collapse:collapse;margin-top:1rem;font-size:.95rem"><tbody>
+      ${rg("Nature", d.type ? esc(d.type) : "")}
+      ${rg(d.objet === "Bulletin" ? "Période" : "Date", d.objet === "Bulletin" ? esc(nomMois(d.annee, d.mois)) : esc(dateLongue(d.date)))}
+      ${rg(d.objet === "Bulletin" ? "Salarié" : d.objet === "Fiche de besoin" ? "Demandeur" : "Bénéficiaire", d.beneficiaire ? esc(d.beneficiaire) + (d.matricule ? " (" + esc(d.matricule) + ")" : "") : "")}
+      ${rg("Emploi", esc(d.emploi || ""))}
+      ${rg("Objet", esc(d.objet_document || "") + (d.fiche_numero ? " — fiche de besoin " + esc(d.fiche_numero) : ""))}
+      ${rg(d.objet === "Bulletin" ? "Net à payer" : d.objet === "Fiche de besoin" ? "Montant demandé" : "Montant", montant(d.montant))}
+      ${rg("Montant retenu", !masque && d.montant_valide && Number(d.montant_valide) !== Number(d.montant) ? fcfa(d.montant_valide) + " FCFA" : "")}
+      ${rg("Caisse ou compte", esc(d.caisse || ""))}
+      ${rg("État", `<b>${esc(d.statut || "")}</b>`)}
+      ${rg("Signée par la caisse", d.signe_caissier_le ? le(d.signe_caissier_le) + (d.caissier ? " — " + esc(d.caissier) : "") : "")}
+      ${rg("Signée par le bénéficiaire", d.signe_beneficiaire_le ? le(d.signe_beneficiaire_le) + (d.mode_signature === "Guichet" ? " — au guichet" : d.mode_signature === "Application" ? " — depuis son compte" : "") : "")}
+      ${rg("Visa du responsable", le(d.visa_le))}${rg("Contrôle", le(d.controle_le))}${rg("Décision du DAF", le(d.decision_le))}
+      ${rg("Payée", d.paye_le ? le(d.paye_le) + (masque ? "" : " — " + fcfa(d.montant_paye) + " FCFA") : "")}
+      ${rg("Paie validée", le(d.valide_le))}
+    </tbody></table>
+    ${masque ? (connecte
+        ? `<div class="info">Le montant est masqué : votre compte n'a pas accès à ce document.</div>`
+        : `<div class="info">Le montant est masqué. Il s'affiche après connexion, pour les personnes autorisées à lire ce document.</div>
+           <p><button class="btn btn-principal" type="button" id="v-connexion">Se connecter pour afficher le montant</button></p>`) : ""}
+    <p style="margin-top:1rem"><b>Comparez ces informations avec le document que vous avez en main.</b> La moindre différence (${masque ? "numéro, nom, date" : "montant, nom, date"}) signifie que le document a été modifié.</p>
+    <p class="discret petit">Code ${esc(codeLisible(d.code))} · vérifié le ${esc(quandHeure(new Date()))}</p>${accueil}`);
+  if ($("#v-connexion")) $("#v-connexion").onclick = () => { etat.verifEnAttente = d.code; ecranConnexion(); };
+}
+
 function ecranActivation(jeton, type) {
   const invite = type !== "recovery";
   cadreAcces(`<h1>${invite ? "Activer votre accès" : "Nouveau mot de passe"}</h1>
@@ -1996,6 +2053,7 @@ function formulaireUtilisateur(u) {
         prenom: lireChamp({ k: "prenom" }), nom: lireChamp({ k: "nom" }), fonction: lireChamp({ k: "fonction" }),
         role: $("#ch-role").value, actif: $("#ch-actif").checked, roles_supplementaires: lireActivites("ch-act")
       };
+      if (!String(donnees.prenom ?? "").trim() || !String(donnees.nom ?? "").trim()) return "Le prénom et le nom sont obligatoires.";
       const poste = $("#ch-poste").value || null;
       if (poste) { delete donnees.role; delete donnees.roles_supplementaires; }
       const { error } = await sb.from("profils").update(donnees).eq("id", u.id);
@@ -2177,8 +2235,8 @@ function pageProfil() {
     <p class="discret">${esc(p.email)} · ${esc(libelleRoles(p))}</p></div></div>
     <form class="carte-form" id="f-profil" novalidate><h2>Identité</h2>
       <div class="grille2">
-        <div>${champFormulaire({ k: "prenom", l: "Prénom" }, p.prenom)}</div>
-        <div>${champFormulaire({ k: "nom", l: "Nom" }, p.nom)}</div>
+        <div>${champFormulaire({ k: "prenom", l: "Prénom", req: true }, p.prenom)}</div>
+        <div>${champFormulaire({ k: "nom", l: "Nom", req: true }, p.nom)}</div>
         <div>${champFormulaire({ k: "fonction", l: "Fonction" }, p.fonction)}</div>
       </div><div id="pr-err"></div>
       <p style="margin-top:1.25rem"><button class="btn btn-principal" type="submit">Enregistrer</button></p></form>
@@ -2189,7 +2247,15 @@ function pageProfil() {
       <p style="margin-top:1.25rem"><button class="btn" type="submit">Changer le mot de passe</button></p></form>`;
   $("#f-profil").onsubmit = async e => {
     e.preventDefault();
-    const donnees = { prenom: lireChamp({ k: "prenom" }), nom: lireChamp({ k: "nom" }), fonction: lireChamp({ k: "fonction" }) };
+    const propre = k => String(lireChamp({ k }) ?? "").trim();
+    const donnees = { prenom: propre("prenom"), nom: propre("nom"), fonction: propre("fonction") || null };
+    // Un profil sans nom reste anonyme partout (signatures, journal, listes) : on ne l'enregistre pas.
+    const manque = !donnees.prenom ? "prenom" : !donnees.nom ? "nom" : p.fonction && !donnees.fonction ? "fonction" : null;
+    if (manque) {
+      $("#pr-err").innerHTML = `<div class="erreur">${manque === "fonction" ? "Indiquez votre fonction : ce champ ne peut pas être vidé." : "Le prénom et le nom sont obligatoires."}</div>`;
+      $("#ch-" + manque).focus(); return;
+    }
+    $("#pr-err").innerHTML = "";
     const { data, error } = await sb.from("profils").update(donnees).eq("id", p.id).select().single();
     if (error) return ($("#pr-err").innerHTML = `<div class="erreur">${esc(messageErreur(error))}</div>`);
     etat.profil = data; toast("Profil enregistré."); rendreCoque();
@@ -3036,7 +3102,8 @@ function formulaireAffectation(o, retour) {
   achats();
 }
 
-function imprimerPieceOperation(o, lignes) {
+async function imprimerPieceOperation(o, lignes) {
+  const codes = await codesVerification("Opération", [o.id]);
   const nature = o.type === "Recette" ? "Pièce de recette" : o.type === "Virement" ? "Ordre de virement interne" : "Pièce de dépense";
   imprimerHtml(`${nature} ${o.numero}`, `<h1>${nature} n° ${esc(o.numero)}</h1>
     <p class="discret">Du ${esc(dateCourte(o.date_operation))}${o.annulee ? " — ANNULÉE : " + esc(o.motif_annulation || "") : ""}</p>
@@ -3055,7 +3122,8 @@ function imprimerPieceOperation(o, lignes) {
     ${lignes.map(l => `<tr><td>${esc(l.numero)}</td><td>${esc(l.compte)}</td><td>${esc(l.libelle)}</td>
       <td style="text-align:right">${l.debit ? fcfa(l.debit) : ""}</td><td style="text-align:right">${l.credit ? fcfa(l.credit) : ""}</td></tr>`).join("")}</tbody></table>
     <table style="margin-top:2.5rem"><thead><tr><th>Établi par</th><th>Visa du DAF</th><th>${o.type === "Recette" ? "Remis par" : "Reçu par (bénéficiaire)"}</th></tr></thead>
-    <tbody><tr><td style="height:5rem">${esc(o.reprise ? "Reprise du classeur" : o.saisi_par_nom || "")}</td><td></td><td>${esc(o.beneficiaire || "")}</td></tr></tbody></table>`);
+    <tbody><tr><td style="height:5rem">${esc(o.reprise ? "Reprise du classeur" : o.saisi_par_nom || "")}</td><td></td><td>${esc(o.beneficiaire || "")}</td></tr></tbody></table>
+    ${blocVerification(codes[o.id])}`);
 }
 
 /* =====================================================================
@@ -4975,7 +5043,7 @@ const STYLE_BULLETIN_IMPRESSION = `@page{size:A4 portrait;margin:9mm 10mm}
 const tauxBp = v => v == null || v === "" ? "" : `${Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
 const mtBp = v => Number(v) ? fcfa(v) : "";
 
-function bulletinHtml(b, ls, impression = false) {
+function bulletinHtml(b, ls, impression = false, code = null) {
   const e = etat.entite || {};
   const fin = new Date(b.annee, b.mois, 0).getDate();
   const gains = ls.filter(l => Number(l.gain) !== 0), autres = ls.filter(l => Number(l.gain) === 0);
@@ -5019,8 +5087,9 @@ function bulletinHtml(b, ls, impression = false) {
     </tbody></table>
     <div class="pied"><div class="net"><span>Net à payer</span><strong>${fcfa(b.net_a_payer)} FCFA</strong></div></div>
     <p class="lettres">Arrêté le présent bulletin à la somme nette de <b>${esc(enLettres(b.net_a_payer))} francs CFA</b>.</p>
-    <p class="mention">Pour vous aider à faire valoir vos droits, conservez ce bulletin de paie sans limitation de durée.</p>
-    <div class="signatures"><span>Le salarié</span><span style="text-align:right">La Direction</span><div style="margin-right:2rem"></div><div style="margin-left:2rem"></div></div>
+    <p class="mention">Pour vous aider à faire valoir vos droits, conservez ce bulletin de paie sans limitation de durée.${code ? ` Bulletin vérifiable : scannez le QR code ci-dessous (code ${esc(codeLisible(code))}).` : ""}</p>
+    <div class="signatures"${code ? ` style="position:relative"` : ""}><span>Le salarié</span><span style="text-align:right">La Direction</span><div style="margin-right:2rem"></div><div style="margin-left:2rem"></div>
+      ${code ? `<i style="position:absolute;left:50%;top:0;transform:translateX(-50%);line-height:0">${qrSvg(adresseVerification(code), 17, 2)}</i>` : ""}</div>
     ${impression ? `<p class="legal">${esc(e.raison_sociale || "GUEST MARKETS")} · ${esc(e.siege || "")} · Tél. ${esc(e.telephone || "")} · RCCM ${esc(e.rccm || "")} · NIU ${esc(e.niu || "")}</p>` : ""}
   </div>`;
 }
@@ -5042,7 +5111,9 @@ async function imprimerBulletins(bulletins, lignesFournies) {
   if (!bulletins.length) return toast("Aucun bulletin à imprimer.", true);
   const ids = bulletins.map(b => b.id);
   const lignes = lignesFournies || await chargerTout(() => sb.from("lignes_bulletin").select("*").in("bulletin_id", ids).order("ordre").order("id"));
-  const pages = bulletins.map((b, i) => `<div class="page-bp" style="${i ? "page-break-before:always;" : ""}">${bulletinHtml(b, lignes.filter(l => l.bulletin_id === b.id), true)}</div>`);
+  // Seul un bulletin de paie validée porte un QR code : avant, il peut encore changer.
+  const codes = await codesVerification("Bulletin", bulletins.filter(b => b.statut_paie === "Validée").map(b => b.id));
+  const pages = bulletins.map((b, i) => `<div class="page-bp" style="${i ? "page-break-before:always;" : ""}">${bulletinHtml(b, lignes.filter(l => l.bulletin_id === b.id), true, codes[b.id])}</div>`);
   imprimerHtml(`Bulletins ${MOIS[bulletins[0].mois - 1]} ${bulletins[0].annee}`, `<style>${STYLE_BULLETIN}${STYLE_BULLETIN_IMPRESSION}</style>${pages.join("")}`, { brut: true });
 }
 
@@ -7250,7 +7321,8 @@ function detailFicheHtml(f) {
       ${(f.justif_pieces || []).map((p, i) => `<button type="button" class="btn" data-piece="${esc(p)}">Reçu ${i + 1}</button>`).join("")}</p>`;
 }
 // Fiche imprimable, au format des documents de l'entreprise.
-function imprimerFicheBesoin(f) {
+async function imprimerFicheBesoin(f) {
+  const codes = await codesVerification("Fiche de besoin", [f.id]);
   const ligne = (etape, qui, quand_, obs) => `<tr><td><b>${esc(etape)}</b></td><td>${esc(qui || "")}</td><td style="white-space:nowrap">${esc(quand_ ? quandHeure(quand_) : "")}</td><td>${esc(obs || "")}</td></tr>`;
   imprimerHtml(`Fiche de besoin ${f.numero}`, `<h1 style="text-align:center;letter-spacing:.03em">FICHE D'EXPRESSION DE BESOIN</h1>
     <p style="text-align:center" class="discret">N° ${esc(f.numero)} · émise le ${esc(dateLongue(String(f.created_at).slice(0, 10)))}${f.urgence === "Urgente" ? " · <b style='color:#B42318'>URGENT</b>" : ""}</p>
@@ -7271,7 +7343,8 @@ function imprimerFicheBesoin(f) {
       ${ligne("Contrôle (direction financière)", f.controle_nom, f.controle_le, f.controle_le ? (f.montant_valide ? "Conforme" + (f.categorie ? " — " + f.categorie : "") : f.statut) + (f.controle_commentaire ? " — " + f.controle_commentaire : "") : "")}
       ${ligne("DAF", f.decision_nom, f.decision_le, f.decision_le ? (f.caisse ? "Validée — " + f.caisse : "Refusée") + (f.decision_commentaire ? " — " + f.decision_commentaire : "") : "")}
       ${ligne("Caisse", "", f.paye_le, f.paye_le ? `${fcfa(f.montant_paye)} FCFA remis${f.piece_numero ? " — pièce " + f.piece_numero : ""}` : "")}
-      ${ligne("Justification", f.beneficiaire, f.justif_le, f.justif_le ? `${fcfa(f.justif_montant)} FCFA dépensés${f.justif_controle_le ? " — acceptée" : ""}` : "")}</tbody></table>`);
+      ${ligne("Justification", f.beneficiaire, f.justif_le, f.justif_le ? `${fcfa(f.justif_montant)} FCFA dépensés${f.justif_controle_le ? " — acceptée" : ""}` : "")}</tbody></table>
+    ${blocVerification(codes[f.id])}`);
 }
 const brancherPieces = () => { $$("[data-piece]").forEach(b => b.onclick = () => voirJustificatif(b.dataset.piece));
   $$("[data-impfb]").forEach(b => b.onclick = () => imprimerFicheBesoin(etat.ficheAffichee));
@@ -7408,6 +7481,7 @@ const quandHeure = d => d ? new Date(d).toLocaleString("fr-FR", { dateStyle: "sh
 async function imprimerPieceCaisse(id) {
   let p; try { p = await appeler("lire_piece_caisse", { p_piece: id }); } catch (err) { return toast(messageErreur(err), true); }
   if (!p) return toast("Pièce de caisse introuvable.", true);
+  const codes = await codesVerification("Pièce de caisse", [p.id]);
   const bloc = (titre, img, nom, quand, mention) => `<td style="width:50%;vertical-align:top"><b>${esc(titre)}</b><br>
     ${img ? `<img src="${esc(img)}" alt="Signature" style="height:70px;max-width:100%;display:block;margin:.3rem 0">` : `<div style="height:70px;color:#B42318">Pas encore signée</div>`}
     <span>${esc(nom || "")}</span><br><span class="discret">${quand ? "Signé électroniquement le " + esc(quandHeure(quand)) : ""}${mention ? "<br>" + esc(mention) : ""}</span></td>`;
@@ -7419,7 +7493,8 @@ async function imprimerPieceCaisse(id) {
       <tr><th>Nature</th><td>Avance à justifier sous 48 heures (reçus et monnaie)</td></tr></table>
     <table style="margin-top:1rem"><tr>${bloc("Remis par (caisse)", p.signature_caissier, p.caissier, p.signe_caissier_le)}
       ${bloc("Reçu par (bénéficiaire)", p.signature_beneficiaire, p.beneficiaire, p.signe_beneficiaire_le,
-        p.mode_signature === "Guichet" ? "Signée au guichet, sur l'écran de la caisse (" + (p.signataire || "") + ")" : p.mode_signature === "Application" ? "Signée depuis son compte personnel" : "")}</tr></table>`);
+        p.mode_signature === "Guichet" ? "Signée au guichet, sur l'écran de la caisse (" + (p.signataire || "") + ")" : p.mode_signature === "Application" ? "Signée depuis son compte personnel" : "")}</tr></table>
+    ${blocVerification(codes[p.id])}`);
 }
 
 // La caisse prépare et signe la pièce ; ensuite le bénéficiaire signe (son téléphone, ou au guichet).
@@ -9533,6 +9608,52 @@ function piedSocieteHtml() {
     RCCM ${esc(e.rccm || "")} · NIU ${esc(e.niu || "")}${e.numero_cnps ? " · CNPS " + esc(e.numero_cnps) : ""}</div>`;
 }
 
+/* =====================================================================
+   QR code de vérification (13/11/2026)
+   Pièces de caisse, fiches de besoin, bulletins de paie et pièces de trésorerie portent un QR code.
+   Il ouvre ?v=CODE : une page publique qui montre ce que la base a enregistré pour ce document
+   (numéro, date, montant, bénéficiaire, état), à comparer avec le papier. Le code est tiré au hasard
+   par la base (codes_documents) ; il ne contient aucune donnée.
+   ===================================================================== */
+const QR_SCRIPT = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+// Toujours l'adresse officielle, quel que soit l'endroit d'où l'on imprime (sauf en simulation locale).
+const ADRESSE_VERIFICATION = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin + location.pathname : "https://gm-daf-app.vercel.app/";
+const adresseVerification = code => ADRESSE_VERIFICATION + "?v=" + code;
+const codeLisible = code => String(code || "").replace(/(.{5})(?=.)/g, "$1-");
+
+// Le QR est dessiné en SVG fixe : l'aperçu d'impression n'exécute aucun script.
+function qrSvg(texte, mm, marge = 4) {
+  const q = window.qrcode(0, "M"); q.addData(texte); q.make();
+  const n = q.getModuleCount(); let d = "";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + marge} ${r + marge}h1v1h-1z`;
+  const t = n + 2 * marge;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${t} ${t}" width="${mm}mm" height="${mm}mm" shape-rendering="crispEdges" role="img" aria-label="QR code de vérification"><rect width="${t}" height="${t}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+// Les codes des documents à imprimer. Une panne ne bloque jamais l'impression : le document sort sans QR.
+async function codesVerification(objet, ids) {
+  ids = ids.filter(Boolean);
+  if (!ids.length) return {};
+  try {
+    const [codes] = await Promise.all([appeler("codes_documents", { p_objet: objet, p_ids: ids }), chargerScript(QR_SCRIPT)]);
+    return window.qrcode ? codes || {} : {};
+  } catch (e) {
+    // Fonction pas encore installée dans la base : le document s'imprime simplement sans QR.
+    if (!(e && (e.code === "PGRST202" || /Could not find the function|Fonction inconnue/.test(e.message || "")))) toast("QR code de vérification indisponible : le document s'imprime sans.", true);
+    return {};
+  }
+}
+
+function blocVerification(code) {
+  if (!code) return "";
+  return `<div style="display:flex;align-items:center;gap:4mm;margin-top:7mm;padding:2.5mm 3mm;border:1px solid #C3CCD8;border-radius:2mm;page-break-inside:avoid;break-inside:avoid">
+    <div style="flex:none;line-height:0">${qrSvg(adresseVerification(code), 24)}</div>
+    <div style="font-size:10.5px;line-height:1.45;color:#16202E"><b>Document vérifiable</b><br>
+      Scannez ce code avec l'appareil photo d'un téléphone : les informations enregistrées par ${esc((etat.entite || {}).raison_sociale || "GUEST MARKETS")} pour ce document s'affichent.
+      Elles doivent être identiques à celles imprimées ici.<br>
+      <span style="color:#5A6675">Code ${esc(codeLisible(code))} · ${esc(ADRESSE_VERIFICATION.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</span></div></div>`;
+}
+
 function documentImprimable(titre, corpsHtml, opts = {}) {
   // À l'écran (aperçu), le document se présente comme une feuille A4 (ou A4 paysage) sur fond gris.
   const paysage = /landscape/.test(corpsHtml);
@@ -9655,7 +9776,8 @@ const scriptsCharges = {};
 const INTEGRITE_SCRIPTS = {
   "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js": "sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT",
   "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js": "sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk",
-  "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js": "sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3"
+  "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js": "sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3",
+  "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js": "sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k"
 };
 
 function chargerScript(url) {
