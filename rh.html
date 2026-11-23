@@ -5481,19 +5481,24 @@ function formulaireRubrique(r, apres) {
 }
 
 /* =====================================================================
-   Congés : demandes, décisions, soldes (1,5 jour ouvrable par mois de service).
+   Congés : demandes, décisions, soldes (jours acquis par mois : paramètre de paie CONGE_JOURS_MOIS).
    ===================================================================== */
+// Droit à congé : 2 jours ouvrables par mois (Convention collective nationale du commerce) ; le Code du travail en prévoit 1,5.
+const texteDroitConges = v => { v = Number(v || 2);
+  return `${qte(v)} jour${v > 1 ? "s" : ""} ouvrable${v > 1 ? "s" : ""} acquis par mois de service${v === 2 ? " (Convention collective nationale du commerce)" : v === 1.5 ? " (Code du travail, art. 89)" : ""}`; };
 async function pageConges() {
-  const [{ data: soldes, error }, { data: conges }] = await Promise.all([
+  const [{ data: soldes, error }, { data: conges }, { data: regle }] = await Promise.all([
     sb.from("v_soldes_conges").select("*").eq("actif", true).order("matricule"),
-    sb.from("conges").select("*").order("date_debut", { ascending: false })]);
+    sb.from("conges").select("*").order("date_debut", { ascending: false }),
+    sb.from("parametres_paie").select("valeur").eq("code", "CONGE_JOURS_MOIS").lte("date_effet", aujourdhui()).order("date_effet", { ascending: false }).limit(1)]);
+  const parMois = Number(((regle || [])[0] || {}).valeur || 2);
   if (error) throw error;
   await chargerListe("profils_noms");
   const sal = id => (soldes || []).find(s => s.salarie_id === id) || {};
   const modif = peut(PAIE_PREPARE);
   const CLASSE_CONGE = { "Demandé": "attente", "Visé": "attente", "Approuvé": "ok", "Refusé": "alerte", "Annulé": "inactif" };
   $("#contenu").innerHTML = `<div class="entete-page"><div><h1>Congés</h1>
-      <p class="discret">1,5 jour ouvrable acquis par mois de service (Code du travail, art. 89), plus le report saisi sur la fiche. Seuls les congés annuels approuvés
+      <p class="discret">${texteDroitConges(parMois)}, plus le report saisi sur la fiche. Seuls les congés annuels approuvés
       diminuent le solde ; un congé sans solde se retient sur la paie (élément « Absence non rémunérée »).</p></div>
       <div class="actions-ligne">${modif ? `<button class="btn btn-principal" id="b-conge">Nouvelle demande</button>` : ""}</div></div>
     <h2>Soldes au ${new Date().toLocaleDateString("fr-FR")}</h2>
@@ -9152,7 +9157,7 @@ async function vueMesConges(m, zone, actions) {
       <div class="kpi"><span class="pastille-ic bleu">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.acquis)}</b><span>jours acquis</span></span></div>
       <div class="kpi"><span class="pastille-ic orange">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.pris)}</b><span>jours pris</span></span></div>
       <div class="kpi"><span class="pastille-ic vert">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.reste)}</b><span>jours restants</span></span></div></div>
-    <p class="discret petit">1,5 jour ouvrable par mois de service. Votre demande passe d'abord par votre responsable${m.manager ? ` (${esc(nomPersonne(m.manager))})` : ""}, puis par la RH qui l'approuve.</p>
+    <p class="discret petit">${texteDroitConges(m.conges.par_mois)}. Votre demande passe d'abord par votre responsable${m.manager ? ` (${esc(nomPersonne(m.manager))})` : ""}, puis par la RH qui l'approuve.</p>
     <div class="panneau defil"><table><thead><tr><th>Type</th><th>Du</th><th>Au</th><th class="montant">Jours</th><th>Statut</th><th>Avis du responsable</th><th></th></tr></thead><tbody>
       ${conges.map(c => `<tr><td>${esc(c.type)}${c.motif ? `<div class="discret petit">${esc(c.motif)}</div>` : ""}</td><td class="code">${esc(dateCourte(c.date_debut))}</td>
         <td class="code">${esc(dateCourte(c.date_fin))}</td><td class="montant">${qte(c.jours)}</td><td><span class="pastille ${CLASSE_CONGE_ESP[c.statut] || ""}">${esc(statutConge(c))}</span></td>
