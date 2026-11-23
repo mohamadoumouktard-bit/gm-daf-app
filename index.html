@@ -9151,29 +9151,38 @@ async function vueMonDossier(m, zone, actions) {
 
 async function vueMesConges(m, zone, actions) {
   const conges = await appeler("mes_conges") || [];
-  actions.innerHTML = `<button class="btn btn-principal" id="b-dem-conge">Demander un congé</button>`;
-  zone.innerHTML = `<div class="kpis">
+  // Un stagiaire n'acquiert pas de congés payés : il ne demande que des absences (événement familial, maladie…).
+  const stage = estStagiaireEspace();
+  actions.innerHTML = `<button class="btn btn-principal" id="b-dem-conge">${stage ? "Demander une absence" : "Demander un congé"}</button>`;
+  zone.innerHTML = stage ? `<div class="info">En stage, vous n'acquérez pas de congés payés. Vous pouvez demander une absence (événement familial, maladie…) :
+      elle passe d'abord par votre responsable${m.manager ? ` (${esc(nomPersonne(m.manager))})` : ""}, puis par la RH.</div>${tableMesConges(conges)}`
+    : `<div class="kpis">
       <div class="kpi"><span class="pastille-ic bleu">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.acquis)}</b><span>jours acquis</span></span></div>
       <div class="kpi"><span class="pastille-ic orange">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.pris)}</b><span>jours pris</span></span></div>
       <div class="kpi"><span class="pastille-ic vert">${ic("calendrier", 20)}</span><span class="kpi-txt"><b>${qte(m.conges.reste)}</b><span>jours restants</span></span></div></div>
     <p class="discret petit">${texteDroitConges(m.conges.par_mois)}. Votre demande passe d'abord par votre responsable${m.manager ? ` (${esc(nomPersonne(m.manager))})` : ""}, puis par la RH qui l'approuve.</p>
-    <div class="panneau defil"><table><thead><tr><th>Type</th><th>Du</th><th>Au</th><th class="montant">Jours</th><th>Statut</th><th>Avis du responsable</th><th></th></tr></thead><tbody>
+    ${tableMesConges(conges)}`;
+  $$("[data-annuler]").forEach(b => b.onclick = async () => {
+    if (!confirm("Annuler cette demande ?")) return;
+    try { await appeler("annuler_ma_demande_conge", { p_id: b.dataset.annuler }); toast("Demande annulée."); recharger(); } catch (err) { toast(messageErreur(err), true); }
+  });
+  $("#b-dem-conge").onclick = () => formulaireMonConge(m, stage);
+}
+
+const tableMesConges = conges => `<div class="panneau defil"><table><thead><tr><th>Type</th><th>Du</th><th>Au</th><th class="montant">Jours</th><th>Statut</th><th>Avis du responsable</th><th></th></tr></thead><tbody>
       ${conges.map(c => `<tr><td>${esc(c.type)}${c.motif ? `<div class="discret petit">${esc(c.motif)}</div>` : ""}</td><td class="code">${esc(dateCourte(c.date_debut))}</td>
         <td class="code">${esc(dateCourte(c.date_fin))}</td><td class="montant">${qte(c.jours)}</td><td><span class="pastille ${CLASSE_CONGE_ESP[c.statut] || ""}">${esc(statutConge(c))}</span></td>
         <td class="petit">${c.avis_responsable ? `${esc(c.avis_responsable)}${c.avis_commentaire ? " — " + esc(c.avis_commentaire) : ""}` : ""}</td>
         <td>${["Demandé", "Visé"].includes(c.statut) ? `<button class="btn-lien" data-annuler="${c.id}">Annuler</button>` : ""}</td></tr>`).join("")
-        || `<tr><td colspan="7" class="vide">Aucune demande de congé.</td></tr>`}</tbody></table></div>`;
-  $$("[data-annuler]").forEach(b => b.onclick = async () => {
-    if (!confirm("Annuler cette demande de congé ?")) return;
-    try { await appeler("annuler_ma_demande_conge", { p_id: b.dataset.annuler }); toast("Demande annulée."); recharger(); } catch (err) { toast(messageErreur(err), true); }
-  });
-  $("#b-dem-conge").onclick = () => {
-    ouvrirModale("Demander un congé", `<div class="grille2">
-      <div><label for="mc-type">Type</label><select id="mc-type">${["Congé annuel", "Événement familial", "Maladie", "Maternité", "Paternité", "Sans solde"].map(t => `<option>${t}</option>`).join("")}</select></div>
+        || `<tr><td colspan="7" class="vide">Aucune demande.</td></tr>`}</tbody></table></div>`;
+
+function formulaireMonConge(m, stage) {
+    ouvrirModale(stage ? "Demander une absence" : "Demander un congé", `<div class="grille2">
+      <div><label for="mc-type">Type</label><select id="mc-type">${["Congé annuel", "Événement familial", "Maladie", "Maternité", "Paternité", "Sans solde"].filter(t => !stage || t !== "Congé annuel").map(t => `<option>${t}</option>`).join("")}</select></div>
       <div><label for="mc-jours">Jours ouvrables *</label><input type="number" id="mc-jours" min="0.5" step="0.5"><p class="aide-champ">Calculé du lundi au samedi ; corrigez si besoin.</p></div>
       <div><label for="mc-du">Du *</label><input type="date" id="mc-du" min="${aujourdhui()}"></div><div><label for="mc-au">Au (inclus) *</label><input type="date" id="mc-au" min="${aujourdhui()}"></div></div>
       <label for="mc-motif">Motif ou précision</label><input type="text" id="mc-motif">
-      <p class="discret petit" id="mc-solde">Solde actuel : ${qte(m.conges.reste)} jour(s).</p>`, {
+      ${stage ? "" : `<p class="discret petit" id="mc-solde">Solde actuel : ${qte(m.conges.reste)} jour(s).</p>`}`, {
       libelleSave: "Envoyer la demande",
       onSave: async () => {
         const p = { type: $("#mc-type").value, date_debut: $("#mc-du").value, date_fin: $("#mc-au").value, jours: Number($("#mc-jours").value || 0), motif: $("#mc-motif").value.trim() };
@@ -9186,7 +9195,6 @@ async function vueMesConges(m, zone, actions) {
     const compter = () => { const n = compterJoursOuvrables($("#mc-du").value, $("#mc-au").value); if (n) $("#mc-jours").value = n; };
     $("#mc-du").onchange = () => { if (!$("#mc-au").value || $("#mc-au").value < $("#mc-du").value) $("#mc-au").value = $("#mc-du").value; compter(); };
     $("#mc-au").onchange = compter;
-  };
 }
 
 async function vueMesBulletins(m, zone) {
