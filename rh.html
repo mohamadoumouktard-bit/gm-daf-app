@@ -9644,6 +9644,15 @@ async function blocAccesSalarie(s, conteneur, recharge) {
       const email = $("#ac-email").value.trim(), jusqu = $("#ac-jusqu").value || null;
       if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return "Adresse e-mail invalide.";
       if (s.type_contrat === "Stage" && !jusqu) return "Indiquez la fin du stage.";
+      // Un compte existe déjà avec cette adresse (accès retiré auparavant) : on le rétablit au lieu d'en créer un.
+      const { data: existant } = await sb.from("profils").select("id, role, actif").ilike("email", email).maybeSingle();
+      if (existant) {
+        if (existant.role !== "salarie") return "Cette adresse est celle d'un compte de gestion : le DAF utilise « Relier un compte existant ».";
+        try { await appeler("lier_acces_salarie", { p_profil: existant.id, p_salarie: s.id, p_jusqu_au: jusqu, p_nouveau: true }); }
+        catch (err) { return messageErreur(err); }
+        setTimeout(() => { toast(`Accès de ${s.prenom || s.nom} rétabli : son compte existait déjà. Elle ou il se reconnecte avec son mot de passe habituel (sinon « Mot de passe oublié » sur l'écran de connexion).`); recharge(); }, 0);
+        return;
+      }
       let r;
       try { r = await appelerGestionUtilisateurs({ action: "inviter", mode: "lien", email, role: "salarie", salarie_id: s.id, acces_jusqu_au: jusqu, nom: s.nom, prenom: s.prenom }); }
       catch (err) { return err.message; }
@@ -9673,7 +9682,9 @@ async function blocAccesSalarie(s, conteneur, recharge) {
     }
   }));
   clic("ac-retirer", async () => {
-    if (!confirm(pr.role === "salarie" ? `Retirer l'accès de ${nomPersonne(s)} ? Son compte est désactivé.` : `Délier ce compte de la fiche ? Le compte de gestion reste actif.`)) return;
+    if (!confirm(pr.role === "salarie" ? `Retirer l'accès de ${nomPersonne(s)} ?
+
+Son compte est désactivé : la personne ne peut plus se connecter. Pour le lui rendre plus tard : « Créer son accès » avec la même adresse e-mail.` : `Délier ce compte de la fiche ? Le compte de gestion reste actif.`)) return;
     try { await appeler("retirer_acces_salarie", { p_salarie: s.id }); toast("Accès retiré."); recharge(); } catch (err) { toast(messageErreur(err), true); }
   });
 }
